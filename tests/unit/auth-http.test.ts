@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { InMemoryAuthRepository, createPasswordHash } from "@sop/application";
 import { handleAuthHttpRequest } from "../../apps/api-cloudflare/src/authHttp.ts";
 
+const FIXTURE_ROLE = "fixture.http-role";
+const FIXTURE_PERMISSION = "fixture.http.read";
+
 async function fixture() {
   const repository = new InMemoryAuthRepository();
+  repository.grantRolePermission(FIXTURE_ROLE, FIXTURE_PERMISSION);
   await repository.saveUser({
     id: "usr-http-1",
     username: "operator.http",
@@ -12,7 +16,7 @@ async function fixture() {
     mustChangePassword: true,
     failedLoginCount: 0,
     lockedUntil: null,
-    roles: [{ role: "OPERATOR", scopeId: "unit-a" }],
+    roles: [{ roleCode: FIXTURE_ROLE, scopeId: "unit-a" }],
     active: true,
   });
   return repository;
@@ -99,7 +103,7 @@ describe("G0-03 auth HTTP security boundary", () => {
     expect(await afterLogout?.json()).toEqual({ authenticated: false });
   });
 
-  it("forces reauthentication after password change and invalidates the old password", async () => {
+  it("forces reauthentication after password change and uses catalog-backed scope checks", async () => {
     const repository = await fixture();
     const response = await login(repository);
     const body = (await response.json()) as { csrfToken: string };
@@ -124,6 +128,26 @@ describe("G0-03 auth HTTP security boundary", () => {
     expect(changed?.headers.get("set-cookie")).toContain("Max-Age=0");
 
     expect((await login(repository)).status).toBe(401);
-    expect((await login(repository, "New-Strong-Password-84!")).status).toBe(200);
+    const reauthenticated = await login(repository, "New-Strong-Password-84!");
+    expect(reauthenticated.status).toBe(200);
+    const authenticatedCookie = cookiePair(reauthenticated);
+
+    const allowed = await handleAuthHttpRequest(
+      new Request(
+        `https://example.test/api/v1/authz/check?permission=${FIXTURE_PERMISSION}&scopeId=unit-a`,
+        { headers: { cookie: authenticatedCookie } },
+      ),
+      repository,
+    );
+    expect(await allowed?.json()).toEqual({ allowed: true });
+
+    const wrongScope = await handleAuthHttpRequest(
+      new Request(
+        `https://example.test/api/v1/authz/check?permission=${FIXTURE_PERMISSION}&scopeId=unit-b`,
+        { headers: { cookie: authenticatedCookie } },
+      ),
+      repository,
+    );
+    expect(await wrongScope?.json()).toEqual({ allowed: false });
   });
 });
