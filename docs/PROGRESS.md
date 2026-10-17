@@ -9,7 +9,7 @@ Cập nhật: 17/10/2026
 | CF-01 Cloudflare test channel | verified | GitHub-connected Pages build/deploy + browser smoke thực tế | PR #5; CI `39012157065`; Cloudflare production `0b14fa1f-c483-43c9-8994-f032067cede0`; Browser Rendering desktop/mobile + reorder interaction | Dùng Cloudflare làm kênh test độc lập song song GitHub Pages |
 | G1-01 Scope | verified | OPEN-SCOPE-01 được owner chốt | D-004: một OrgUnit gốc + scope tối thiểu | Dùng cho contract/schema tiếp theo |
 | G1-02 Common Execution data | verified | OPEN-DATA-01 được owner chốt | D-005: execution_no/process-version/scope/assignee/due_at | Không nhồi field nghiệp vụ riêng vào Execution |
-| G1-03A SOD self-approval | verified | Không tự phê duyệt ProcessVersion do chính actor soạn/chỉnh | D-006 | Áp dụng khi làm Governance |
+| G1-03A SOD self-approval | verified | Không tự phê duyệt version do mình soạn/chỉnh | D-006 | Áp dụng khi làm Governance |
 | G1-03B Severity mapping | pending | Owner khóa `severity -> required_approval_level` | Chưa có quyết định chính thức; chỉ có fallback SRS cho prototype | Không đóng G1 toàn gate |
 | G1-04 Fixture source | verified | Chuỗi 11 bước nguồn được duyệt làm SAMPLE | D-007 | Seed source-only; OPEN-SAMPLE-01 vẫn ở G3 |
 | PA-01 Process Authoring core | verified | AC-01 + PRC-001/003/004/005 core + BR-001 application invariant + PRC-009 core subset + preview | PR #4; red run `39010789658`; green run `39011213520`; Pages `39011262184`; merge `991f0922...` | Tiếp PA-01B PRC-002 catalog/search |
