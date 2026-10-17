@@ -18,7 +18,7 @@ export interface AuthLoginRequest {
 }
 
 export interface AuthRoleAssignmentResponse {
-  role: "ADMIN" | "PROCESS_OWNER" | "REVIEWER" | "OPERATOR" | "AUDITOR";
+  roleCode: string;
   scopeId: string;
 }
 
