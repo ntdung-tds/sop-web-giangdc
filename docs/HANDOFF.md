@@ -1,31 +1,21 @@
 # HANDOFF
 
 ## Trạng thái
-G0-01 và G0-02 đã verified. G1 business lock đã chốt scope, common Execution data, self-approval SOD và fixture source content; còn một phần OPEN-SOD-01 chưa đóng.
+G0-01 đang thực hiện trên branch `g0/project-foundation`. Repo public đã được chủ dự án chấp thuận. Prototype UI và workflow GitHub Pages đang được triển khai.
 
-## Quyết định mới
-- D-004: một OrgUnit gốc + scope tối thiểu cho MVP; backend enforcement.
-- D-005: Execution common data tối thiểu; `ExecutionAssignment` là nguồn phân công chuẩn.
-- D-006: cấm tự phê duyệt ProcessVersion do chính actor soạn/chỉnh.
-- D-007: chuỗi 11 bước “Xuất hàng đến đại lý” được dùng làm SAMPLE source-only.
+## Đã verified
+- Repo chính xác.
+- Branch foundation đã tạo.
+- Quyết định giữ public.
 
-## Việc còn mở của G1
-`severity -> required_approval_level` thuộc OPEN-SOD-01 chưa được owner phê duyệt. Không được biến fallback thành quyết định production. Khi cần prototype, fallback SRS là BLOCKING cần Giám sát + người có quyền Phê duyệt; mức còn lại do Giám sát xử lý trong phạm vi.
+## Còn dở
+- Merge prototype vào main.
+- Xác nhận GitHub Pages deploy thành công và URL truy cập thật.
+- Kiểm tra responsive 360/768/1024/1280.
 
-## Việc độc lập được phép tiếp tục
-PA-01 Process Authoring core không phụ thuộc severity mapping:
-- PRC-001..005, PRC-009.
-- AC-01 nhiều quy trình độc lập.
-- Contract/domain trước UI/API.
-- Test invariant trước implementation.
-- UI SAMPLE trên Pages để review.
-- Không BPMN/parallel; không tự thêm role/evidence/document bắt buộc.
-
-## Ràng buộc tiếp tục giữ
-- Repo public: không secret/dữ liệu thật.
-- Runtime adapter không chứa business rules.
-- Không gọi SAMPLE/prototype là production.
-- G1 chỉ được đánh `verified` toàn gate sau khi owner khóa severity approval mapping.
+## Không nên làm
+- Không đưa secret/dữ liệu thật lên public repo.
+- Không gọi prototype là hệ thống đã hoàn thành.
 
 ## Bước tiếp theo
-Sau khi PR tài liệu G1 CI xanh và merge, mở branch `g1/process-authoring-core`, triển khai PA-01, chạy CI, deploy Pages và ghi evidence.
+Deploy Pages → smoke test → cập nhật PROGRESS → bắt đầu G0-02.
