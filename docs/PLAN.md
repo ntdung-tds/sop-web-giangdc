@@ -19,15 +19,24 @@ Trạng thái: verified.
 - G1-03B — `severity -> required_approval_level` thuộc OPEN-SOD-01 chưa được owner khóa. G1 chưa được đóng toàn gate.
 - Fallback SRS chỉ dùng cho prototype, không coi là quyết định production.
 
-## Phần được phép tiếp tục độc lập
-### PA-01 — Process Authoring core
-1. Cập nhật contract/domain cho Process, ProcessVersion DRAFT và Step.
-2. Viết test cho AC-01 và draft validation trước implementation.
-3. Triển khai PRC-001..005 và PRC-009 ở domain/application; chưa persistence thật.
-4. Dựng UI SAMPLE: danh sách quy trình + editor bản nháp + reorder tuyến tính + preview read-only.
-5. Chạy lint/typecheck/unit/build, merge qua PR, deploy Pages và review giao diện.
+## Process Authoring
+### PA-01 — Core
+Trạng thái: verified.
+
+Đã có domain/application test-first cho Process + initial DRAFT, next draft copy, add/edit/copy/remove/reorder Step, BR-001 application conflict, AC-01 independence, PRC-009 core subset và UI SAMPLE/read-only linear preview. Full PRC-009 chưa được claim.
+
+### PA-01B — Process catalog/search — task tiếp theo
+1. Bám đúng PRC-002: tìm theo mã hoặc tên; lọc theo nhóm, owner, trạng thái và đơn vị.
+2. Viết failing tests cho search/filter combinations và isolation trước implementation.
+3. Tạo application query model/service không gắn D1/Postgres.
+4. Bổ sung UI danh mục có search/filter responsive trên Pages; dữ liệu demo phải gắn SAMPLE.
+5. Không triển khai persistence/API/auth trong task này; không invent process business data để làm đẹp UI.
+6. Chỉ verified sau CI xanh, Pages xanh và traceability/evidence cập nhật.
+
+### PA-01C — Requirements/policies
+Sau PA-01B: PRC-006..008 và hoàn thiện PRC-009 khi contract form/document/policy tương ứng đủ căn cứ.
 
 ### PA-02 — Versioning/Governance
-Chỉ bắt đầu sau PA-01 verified; bám AC-02/GOV-001..007 và không dùng severity approval chưa khóa cho exception governance.
+Sau các phần authoring cần thiết; bám AC-02/GOV-001..007. Không sử dụng severity approval chưa khóa như quyết định production.
 
-Không triển khai BPMN/parallel (PRC-012 DEFERRED), không thêm evidence/document/role bắt buộc ngoài nguồn fixture đã xác nhận.
+Không triển khai BPMN/parallel (PRC-012 DEFERRED), không thêm evidence/document/role bắt buộc ngoài nguồn đã xác nhận.
