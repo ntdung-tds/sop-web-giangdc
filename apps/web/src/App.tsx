@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   initialUiState,
   showDashboard,
@@ -10,6 +10,7 @@ import {
 
 export function App() {
   const [ui, setUi] = useState(initialUiState);
+  const heroTitleId = useId();
 
   const submitLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -27,8 +28,8 @@ export function App() {
       <div className="demo-bar">PROTOTYPE UI · SAMPLE DATA · KHÔNG DÙNG DỮ LIỆU THẬT</div>
 
       {ui.view === "landing" ? (
-        <main id="landing" className="landing-shell">
-          <section className="brand-panel" aria-labelledby="hero-title">
+        <main className="landing-shell">
+          <section className="brand-panel" aria-labelledby={heroTitleId}>
             <div className="brand-row">
               <div className="mark" aria-hidden="true">S</div>
               <div><strong>SOP</strong><span>Quản lý quy trình</span></div>
@@ -36,18 +37,18 @@ export function App() {
 
             <div className="hero-copy">
               <span className="eyebrow">Vận hành có kiểm soát</span>
-              <h1 id="hero-title">Mỗi quy trình rõ ràng.<br />Mỗi bước đều truy vết được.</h1>
+              <h1 id={heroTitleId}>Mỗi quy trình rõ ràng.<br />Mỗi bước đều truy vết được.</h1>
               <p>Thiết kế, phát hành và thực hiện SOP theo đúng phiên bản; thu bằng chứng theo từng bước; xử lý ngoại lệ và xem lại toàn bộ lịch sử.</p>
             </div>
 
-            <div className="feature-grid" aria-label="Năng lực chính">
+            <div className="feature-grid" role="group" aria-label="Năng lực chính">
               <article><span>01</span><h2>Đa quy trình</h2><p>Quản lý nhiều SOP độc lập theo đơn vị và phạm vi.</p></article>
               <article><span>02</span><h2>Kiểm soát phiên bản</h2><p>Lượt đang chạy giữ nguyên snapshot đã phát hành.</p></article>
               <article><span>03</span><h2>Hiện trường mobile</h2><p>Thao tác theo bước, bằng chứng và trạng thái đồng bộ.</p></article>
               <article><span>04</span><h2>Truy vết đầy đủ</h2><p>Biết ai làm gì, khi nào và quyết định nào đã được áp dụng.</p></article>
             </div>
 
-            <div className="flow-preview" aria-label="Minh họa quy trình">
+            <div className="flow-preview" role="group" aria-label="Minh họa quy trình">
               <div className="flow-node done"><b>1</b><span>Chuẩn bị</span></div><i />
               <div className="flow-node active"><b>2</b><span>Kiểm tra</span></div><i />
               <div className="flow-node"><b>3</b><span>Xác nhận</span></div><i />
@@ -60,7 +61,7 @@ export function App() {
               <div className="login-kicker">{UI_BASELINE_COPY.loginKicker}</div>
               <h2>{UI_BASELINE_COPY.welcomeTitle}</h2>
               <p className="muted">Truy cập công việc và quy trình trong phạm vi được phân quyền.</p>
-              <form id="demo-login" onSubmit={submitLogin}>
+              <form onSubmit={submitLogin}>
                 <label>
                   Tên đăng nhập
                   <input autoComplete="username" name="username" placeholder="Nhập tên đăng nhập" required />
@@ -69,14 +70,12 @@ export function App() {
                   Mật khẩu
                   <div className="password-wrap">
                     <input
-                      id="password"
                       type={ui.passwordVisible ? "text" : "password"}
                       autoComplete="current-password"
                       placeholder="Nhập mật khẩu"
                       required
                     />
                     <button
-                      id="toggle-password"
                       type="button"
                       aria-label={ui.passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
                       onClick={() => setUi((state) => togglePassword(state))}
@@ -97,7 +96,7 @@ export function App() {
           </section>
         </main>
       ) : (
-        <main id="dashboard" className="app-shell" aria-live="polite">
+        <main className="app-shell" aria-live="polite">
           <aside className="sidebar">
             <div className="app-brand"><div className="mark small">S</div><div><strong>SOP</strong><span>Operations</span></div></div>
             <nav>
@@ -117,7 +116,7 @@ export function App() {
               <div><span className="mobile-brand">SOP</span><span className="crumb">Trang chủ / Tổng quan</span></div>
               <div className="top-actions">
                 <button type="button" className="icon-btn" aria-label="Thông báo">●<span>3</span></button>
-                <button id="logout" type="button" className="profile" onClick={logout}>ND <span>Người dùng demo</span></button>
+                <button type="button" className="profile" onClick={logout}>ND <span>Người dùng demo</span></button>
               </div>
             </header>
 
