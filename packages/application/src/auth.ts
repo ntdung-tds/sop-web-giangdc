@@ -67,6 +67,17 @@ export interface AuthPolicy {
   minimumPasswordLength?: number;
 }
 
+interface ResolvedAuthPolicy {
+  lockoutThreshold: number;
+  lockoutDurationMs: number;
+  sessionTtlMs: number;
+  pbkdf2Iterations: number;
+  sourceRateLimitThreshold: number;
+  sourceRateWindowMs: number;
+  sourceBlockDurationMs: number;
+  minimumPasswordLength: number;
+}
+
 export const AUTH_POLICY_DEFAULTS: AuthPolicy = {
   lockoutThreshold: 5,
   lockoutDurationMs: 15 * 60_000,
@@ -108,9 +119,7 @@ export type LoginResult =
   | { ok: true; session: AuthenticatedSession }
   | { ok: false; error: AuthFailure };
 
-export type PasswordChangeResult =
-  | { ok: true }
-  | { ok: false; error: AuthFailure };
+export type PasswordChangeResult = { ok: true } | { ok: false; error: AuthFailure };
 
 export interface ChangePasswordInput {
   sessionToken: string;
@@ -150,6 +159,21 @@ const INVALID_SESSION: AuthFailure = {
   message: "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.",
 };
 
+function resolvePolicy(policy: AuthPolicy): ResolvedAuthPolicy {
+  return {
+    lockoutThreshold: policy.lockoutThreshold,
+    lockoutDurationMs: policy.lockoutDurationMs,
+    sessionTtlMs: policy.sessionTtlMs,
+    pbkdf2Iterations: policy.pbkdf2Iterations,
+    sourceRateLimitThreshold:
+      policy.sourceRateLimitThreshold ?? AUTH_POLICY_DEFAULTS.sourceRateLimitThreshold ?? 20,
+    sourceRateWindowMs: policy.sourceRateWindowMs ?? AUTH_POLICY_DEFAULTS.sourceRateWindowMs ?? 15 * 60_000,
+    sourceBlockDurationMs:
+      policy.sourceBlockDurationMs ?? AUTH_POLICY_DEFAULTS.sourceBlockDurationMs ?? 15 * 60_000,
+    minimumPasswordLength: policy.minimumPasswordLength ?? AUTH_POLICY_DEFAULTS.minimumPasswordLength ?? 12,
+  };
+}
+
 function normalizeUsername(username: string): string {
   return username.trim().toLocaleLowerCase("en-US");
 }
@@ -167,6 +191,12 @@ function base64ToBytes(value: string): Uint8Array {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
+}
+
+function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
@@ -187,14 +217,17 @@ async function pbkdf2(password: string, salt: Uint8Array, iterations: number): P
     ["deriveBits"],
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+    { name: "PBKDF2", hash: "SHA-256", salt: asArrayBuffer(salt), iterations },
     key,
     256,
   );
   return new Uint8Array(bits);
 }
 
-export async function createPasswordHash(password: string, iterations = AUTH_POLICY_DEFAULTS.pbkdf2Iterations): Promise<string> {
+export async function createPasswordHash(
+  password: string,
+  iterations = AUTH_POLICY_DEFAULTS.pbkdf2Iterations,
+): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const digest = await pbkdf2(password, salt, iterations);
   return `pbkdf2-sha256$${iterations}$${bytesToBase64(salt)}$${bytesToBase64(digest)}`;
@@ -215,7 +248,10 @@ async function sha256Base64(value: string): Promise<string> {
 }
 
 function randomToken(randomBytes: (length: number) => Uint8Array, length = 32): string {
-  return bytesToBase64(randomBytes(length)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+  return bytesToBase64(randomBytes(length))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
 }
 
 function publicUser(user: AuthUserRecord): PublicAuthUser {
@@ -286,28 +322,24 @@ export class InMemoryAuthRepository implements AuthRepository {
 export class AuthService {
   private readonly now: () => number;
   private readonly randomBytes: (length: number) => Uint8Array;
-  private readonly policy: Required<AuthPolicy>;
+  private readonly policy: ResolvedAuthPolicy;
 
   constructor(
     private readonly repository: AuthRepository,
     policy: AuthPolicy = AUTH_POLICY_DEFAULTS,
     dependencies: AuthDependencies = {},
   ) {
-    this.policy = {
-      ...AUTH_POLICY_DEFAULTS,
-      ...policy,
-      sourceRateLimitThreshold: policy.sourceRateLimitThreshold ?? AUTH_POLICY_DEFAULTS.sourceRateLimitThreshold ?? 20,
-      sourceRateWindowMs: policy.sourceRateWindowMs ?? AUTH_POLICY_DEFAULTS.sourceRateWindowMs ?? 15 * 60_000,
-      sourceBlockDurationMs: policy.sourceBlockDurationMs ?? AUTH_POLICY_DEFAULTS.sourceBlockDurationMs ?? 15 * 60_000,
-      minimumPasswordLength: policy.minimumPasswordLength ?? AUTH_POLICY_DEFAULTS.minimumPasswordLength ?? 12,
-    };
+    this.policy = resolvePolicy(policy);
     this.now = dependencies.now ?? (() => Date.now());
-    this.randomBytes = dependencies.randomBytes ?? ((length) => crypto.getRandomValues(new Uint8Array(length)));
+    this.randomBytes =
+      dependencies.randomBytes ?? ((length) => crypto.getRandomValues(new Uint8Array(length)));
   }
 
   async login(input: LoginInput): Promise<LoginResult> {
     const now = this.now();
-    if (await this.isSourceBlocked(input.source, now)) return { ok: false, error: INVALID_CREDENTIALS };
+    if (await this.isSourceBlocked(input.source, now)) {
+      return { ok: false, error: INVALID_CREDENTIALS };
+    }
 
     const user = await this.repository.findUserByUsername(input.username);
     if (!user || !user.active) {
@@ -335,9 +367,10 @@ export class AuthService {
       return { ok: false, error: INVALID_CREDENTIALS };
     }
 
-    await this.repository.saveUser({ ...user, failedLoginCount: 0, lockedUntil: null });
+    const resetUser = { ...user, failedLoginCount: 0, lockedUntil: null };
+    await this.repository.saveUser(resetUser);
     await this.resetSourceThrottle(input.source, now);
-    return { ok: true, session: await this.createSession({ ...user, failedLoginCount: 0, lockedUntil: null }, now) };
+    return { ok: true, session: await this.createSession(resetUser, now) };
   }
 
   async getSession(sessionToken: string): Promise<AuthenticatedSession | null> {
@@ -366,9 +399,15 @@ export class AuthService {
     const resolved = await this.resolveSession(input.sessionToken);
     if (!resolved) return { ok: false, error: INVALID_SESSION };
 
-    const currentPasswordValid = await verifyPassword(input.currentPassword, resolved.user.passwordHash);
+    const currentPasswordValid = await verifyPassword(
+      input.currentPassword,
+      resolved.user.passwordHash,
+    );
     if (!currentPasswordValid) return { ok: false, error: INVALID_CREDENTIALS };
-    if (input.newPassword.length < this.policy.minimumPasswordLength || input.newPassword === input.currentPassword) {
+    if (
+      input.newPassword.length < this.policy.minimumPasswordLength ||
+      input.newPassword === input.currentPassword
+    ) {
       return {
         ok: false,
         error: {
@@ -378,7 +417,10 @@ export class AuthService {
       };
     }
 
-    const passwordHash = await createPasswordHash(input.newPassword, this.policy.pbkdf2Iterations);
+    const passwordHash = await createPasswordHash(
+      input.newPassword,
+      this.policy.pbkdf2Iterations,
+    );
     await this.repository.saveUser({
       ...resolved.user,
       passwordHash,
@@ -390,7 +432,11 @@ export class AuthService {
     return { ok: true };
   }
 
-  async isAllowed(sessionToken: string, permission: AuthPermission, scopeId: string): Promise<boolean> {
+  async isAllowed(
+    sessionToken: string,
+    permission: AuthPermission,
+    scopeId: string,
+  ): Promise<boolean> {
     const resolved = await this.resolveSession(sessionToken);
     if (!resolved) return false;
     return resolved.user.roles.some((assignment) => {
@@ -399,7 +445,10 @@ export class AuthService {
     });
   }
 
-  private async createSession(user: AuthUserRecord, now: number): Promise<AuthenticatedSession> {
+  private async createSession(
+    user: AuthUserRecord,
+    now: number,
+  ): Promise<AuthenticatedSession> {
     const token = randomToken(this.randomBytes);
     const csrfToken = randomToken(this.randomBytes, 24);
     const session: AuthSessionRecord = {
@@ -421,7 +470,9 @@ export class AuthService {
     };
   }
 
-  private async resolveSession(sessionToken: string): Promise<{ session: AuthSessionRecord; user: AuthUserRecord } | null> {
+  private async resolveSession(
+    sessionToken: string,
+  ): Promise<{ session: AuthSessionRecord; user: AuthUserRecord } | null> {
     if (!sessionToken) return null;
     const tokenHash = await sha256Base64(sessionToken);
     const session = await this.repository.findSessionByTokenHash(tokenHash);
@@ -440,7 +491,8 @@ export class AuthService {
 
   private async recordSourceFailure(source: string, now: number): Promise<void> {
     const current = await this.repository.findLoginSource(source);
-    const outsideWindow = !current || now - current.windowStartedAt >= this.policy.sourceRateWindowMs;
+    const outsideWindow =
+      !current || now - current.windowStartedAt >= this.policy.sourceRateWindowMs;
     const failureCount = outsideWindow ? 1 : current.failureCount + 1;
     const shouldBlock = failureCount >= this.policy.sourceRateLimitThreshold;
     await this.repository.saveLoginSource({
@@ -452,7 +504,12 @@ export class AuthService {
   }
 
   private async resetSourceThrottle(source: string, now: number): Promise<void> {
-    await this.repository.saveLoginSource({ source, windowStartedAt: now, failureCount: 0, blockedUntil: null });
+    await this.repository.saveLoginSource({
+      source,
+      windowStartedAt: now,
+      failureCount: 0,
+      blockedUntil: null,
+    });
   }
 
   private async consumeDummyPasswordWork(password: string): Promise<void> {
