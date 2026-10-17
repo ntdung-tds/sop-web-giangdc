@@ -5,6 +5,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "@sop/contracts": "*"
+    "@sop/contracts": "*",
+    "@sop/domain": "*"
   }
 }
