@@ -4,12 +4,17 @@
 Trạng thái: verified.
 
 ## G0-02 — Technical foundation
-1. Tạo TypeScript monorepo và package boundaries.
-2. Tạo shared contracts + application layer độc lập runtime.
-3. Tạo Node API adapter và Cloudflare API adapter với `/api/v1/health`.
-4. Tạo React web shell thật và dùng GitHub Pages để kiểm tra giao diện.
-5. Bật lint/typecheck/unit/build trong CI.
-6. Chỉ đóng G0-02 khi CI xanh, Pages xanh và evidence được ghi vào PROGRESS/HANDOFF.
+Trạng thái: verified.
 
-## Sau G0-02
-Chuyển sang G1 business lock: scope, role/SOD, common data và UAT fixture. Không triển khai nghiệp vụ còn OPEN trước khi có quyết định hoặc default hợp lệ theo SRS.
+Đã hoàn thành TypeScript monorepo, shared contracts/application, Node + Cloudflare adapters, `/api/v1/health`, React/Vite web shell, CI lint/typecheck/unit/build và GitHub Pages deploy từ web app thật.
+
+## G1 — Business lock
+Mục tiêu: khóa các quyết định nghiệp vụ tối thiểu trước khi viết module Process Authoring/Governance.
+
+1. G1-01 — Organizational scope: xử lý OPEN-SCOPE-01.
+2. G1-02 — Common execution data: xử lý OPEN-DATA-01.
+3. G1-03 — Role / SOD: xử lý OPEN-SOD-01.
+4. G1-04 — UAT fixture: chốt fixture mẫu đủ để test luồng nghiệp vụ.
+5. Cập nhật DECISIONS/PROGRESS/HANDOFF trước khi mở task code nghiệp vụ.
+
+Không triển khai nghiệp vụ còn OPEN trước khi có quyết định hoặc default hợp lệ theo SRS.
