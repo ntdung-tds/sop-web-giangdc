@@ -8,10 +8,16 @@ import type {
   SystemRoleCode,
 } from "@sop/application";
 
+interface D1RunResultLike {
+  meta?: {
+    changes?: number;
+  };
+}
+
 export interface D1PreparedStatementLike {
   bind(...values: unknown[]): D1PreparedStatementLike;
   first<T = Record<string, unknown>>(): Promise<T | null>;
-  run(): Promise<unknown>;
+  run(): Promise<D1RunResultLike>;
 }
 
 export interface D1DatabaseLike {
@@ -49,6 +55,10 @@ interface SourceRow {
 
 interface PermissionRow {
   allowed: number;
+}
+
+interface CountRow {
+  count: number;
 }
 
 function normalizeUsername(username: string): string {
@@ -165,6 +175,42 @@ export class D1AuthRepository implements AuthRepository {
         now,
       )
       .run();
+  }
+
+  async countUsers(): Promise<number> {
+    const row = await this.db
+      .prepare(`SELECT COUNT(*) AS count FROM auth_users`)
+      .first<CountRow>();
+    return row?.count ?? 0;
+  }
+
+  async saveBootstrapUser(user: AuthUserRecord): Promise<boolean> {
+    const now = Date.now();
+    const result = await this.db
+      .prepare(
+        `INSERT OR IGNORE INTO auth_users (
+           id, username, username_norm, display_name, password_hash,
+           must_change_password, failed_login_count, locked_until, roles_json,
+           active, created_at, updated_at, bootstrap_origin
+         )
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, 1
+          WHERE NOT EXISTS (SELECT 1 FROM auth_users LIMIT 1)`,
+      )
+      .bind(
+        user.id,
+        user.username,
+        normalizeUsername(user.username),
+        user.displayName,
+        user.passwordHash,
+        user.mustChangePassword ? 1 : 0,
+        user.failedLoginCount,
+        user.lockedUntil,
+        JSON.stringify(user.roles),
+        user.active ? 1 : 0,
+        now,
+      )
+      .run();
+    return result.meta?.changes === 1;
   }
 
   async findSessionByTokenHash(tokenHash: string): Promise<AuthSessionRecord | null> {
