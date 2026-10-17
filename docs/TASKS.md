@@ -11,10 +11,15 @@
 | G0-02A | Monorepo TypeScript | verified | npm workspaces + package boundaries, PR #2 |
 | G0-02B | Shared contracts/application | verified | Contract health + application service + unit test |
 | G0-02C | API adapters | verified | Node + Cloudflare build thành công |
-| G0-02D | Web shell | verified | React/Vite build và Pages run #39009983993 success |
-| G0-02E | CI | verified | PR run #39009918837: lint + typecheck + unit + build success |
-| G0-02F | Evidence/handoff | verified | PROGRESS/HANDOFF cập nhật, failure/fix được ghi tại PR #2 |
-| G1-01 | Organizational scope | pending | OPEN-SCOPE-01 được khóa hoặc áp dụng default hợp lệ |
-| G1-02 | Common execution data | pending | OPEN-DATA-01 được khóa hoặc áp dụng default hợp lệ |
-| G1-03 | Role / SOD | pending | OPEN-SOD-01 được khóa hoặc áp dụng default hợp lệ |
-| G1-04 | UAT fixture | pending | OPEN-SAMPLE-01/UAT fixture đủ để test nghiệp vụ |
+| G0-02D | Web shell | verified | React/Vite build và Pages success |
+| G0-02E | CI | verified | lint + typecheck + unit + build success |
+| G0-02F | Evidence/handoff | verified | PROGRESS/HANDOFF cập nhật, failure/fix được giữ lại |
+| G1-01 | Organizational scope | verified | D-004: một OrgUnit gốc + scope tối thiểu; backend enforcement |
+| G1-02 | Common execution data | verified | D-005: execution_no/process-version/scope/assignee/due_at; ExecutionAssignment authoritative |
+| G1-03A | SOD self-approval | verified | D-006: cấm tự phê duyệt ProcessVersion do chính actor soạn/chỉnh |
+| G1-03B | Severity approval mapping | pending | Owner phải khóa `severity -> required_approval_level`; fallback chỉ cho prototype |
+| G1-04 | UAT fixture source content | verified | D-007: 11 bước “Xuất hàng đến đại lý” được duyệt làm SAMPLE source-only |
+| PA-01 | Process Authoring core | pending | PRC-001..005 + PRC-009, AC-01; contract/domain/test/UI SAMPLE; không phụ thuộc severity |
+| PA-02 | Versioning + Governance | pending | AC-02 + GOV-001..007; chỉ làm phần không phụ thuộc SOD chưa khóa |
+
+`OPEN-SAMPLE-01` vẫn là việc của G3 cho vai trò/giấy tờ/evidence chính thức; không trộn với việc duyệt chuỗi 11 bước nguồn ở G1.
