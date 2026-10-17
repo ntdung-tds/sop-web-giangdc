@@ -32,7 +32,7 @@ Cập nhật: 17/10/2026
 - Production deployment `0b14fa1f-c483-43c9-8994-f032067cede0`: clone/build/deploy success tại `https://giangdc-sop-demo.pages.dev/`.
 - Browser Rendering desktop: `.appShell` load; `overflow=false`; 11 bước; `Gửi thẩm định` disabled; SAMPLE và `Xuất hàng đến đại lý` xuất hiện đúng.
 - Browser Rendering mobile 360px: accessibility tree load đầy đủ fixture, form readonly và step controls.
-- Interaction smoke 1024px: click nút đưa bước đầu xuống làm hoán đổi chính xác bước 1/2 (`swapped=true`).
+- Interaction smoke 1024px: click reorder bước đầu làm hoán đổi chính xác bước 1 và 2 (`swapped=true`).
 - Một lần burst Browser Rendering gặp rate-limit `2001`; chạy tuần tự sau đó thành công, không phải lỗi ứng dụng.
 
 ## Trạng thái gate
