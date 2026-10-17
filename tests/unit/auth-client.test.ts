@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { restoreSession } from "../../apps/web/src/authClient.ts";
 
+// Regression: a stalled restore must never make first-login takeover impossible.
 describe("G0-03F auth client resilience", () => {
   afterEach(() => {
     vi.useRealTimers();
