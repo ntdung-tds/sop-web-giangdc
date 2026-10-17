@@ -8,6 +8,8 @@ import type {
   SystemRoleCode,
 } from "@sop/application";
 
+const LEGACY_TEMPORARY_PASSWORD_TTL_MS = 48 * 60 * 60_000;
+
 interface D1RunResultLike {
   meta?: {
     changes?: number;
@@ -35,6 +37,7 @@ interface UserRow {
   locked_until: number | null;
   roles_json: string;
   active: number;
+  created_at: number;
 }
 
 interface SessionRow {
@@ -105,13 +108,18 @@ function parseRoles(value: string): RoleAssignment[] {
 }
 
 function mapUser(row: UserRow): AuthUserRecord {
+  const mustChangePassword = row.must_change_password === 1;
+  const temporaryPasswordExpiresAt = mustChangePassword
+    ? row.temporary_password_expires_at ?? row.created_at + LEGACY_TEMPORARY_PASSWORD_TTL_MS
+    : null;
+
   return {
     id: row.id,
     username: row.username,
     displayName: row.display_name,
     passwordHash: normalizePersistedPasswordHash(row.password_hash),
-    mustChangePassword: row.must_change_password === 1,
-    temporaryPasswordExpiresAt: row.temporary_password_expires_at,
+    mustChangePassword,
+    temporaryPasswordExpiresAt,
     failedLoginCount: row.failed_login_count,
     lockedUntil: row.locked_until,
     roles: parseRoles(row.roles_json),
@@ -139,7 +147,7 @@ export class D1AuthRepository implements AuthRepository {
       .prepare(
         `SELECT id, username, display_name, password_hash, must_change_password,
                 temporary_password_expires_at, failed_login_count, locked_until,
-                roles_json, active
+                roles_json, active, created_at
            FROM auth_users
           WHERE username_norm = ?1
           LIMIT 1`,
@@ -154,7 +162,7 @@ export class D1AuthRepository implements AuthRepository {
       .prepare(
         `SELECT id, username, display_name, password_hash, must_change_password,
                 temporary_password_expires_at, failed_login_count, locked_until,
-                roles_json, active
+                roles_json, active, created_at
            FROM auth_users
           WHERE id = ?1
           LIMIT 1`,
