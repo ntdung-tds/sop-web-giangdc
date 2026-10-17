@@ -4,6 +4,10 @@ import { handleAuthHttpRequest } from "../../apps/api-cloudflare/src/authHttp.ts
 
 const FIXTURE_ROLE = "fixture.http-role";
 const FIXTURE_PERMISSION = "fixture.http.read";
+const LEGACY_PASSWORD = "Legacy-Fixture-Password-42!";
+const LEGACY_SALT = "AAECAwQFBgcICQoLDA0ODw==";
+const LEGACY_DIGEST = "E1voi+0dm1AvO+eNAEBsTlCh5IYM35Q8QSqwBus+NKQ=";
+const LEGACY_HASH = `pbkdf2-sha256$600000$${LEGACY_SALT}$${LEGACY_DIGEST}`;
 
 async function fixture() {
   const repository = new InMemoryAuthRepository();
@@ -17,6 +21,23 @@ async function fixture() {
     failedLoginCount: 0,
     lockedUntil: null,
     roles: [{ roleCode: FIXTURE_ROLE, scopeId: "unit-a" }],
+    active: true,
+  });
+  return repository;
+}
+
+async function legacyFixture() {
+  const repository = new InMemoryAuthRepository();
+  await repository.saveUser({
+    id: "usr-legacy-1",
+    username: "legacy.http",
+    displayName: "Legacy HTTP",
+    passwordHash: LEGACY_HASH,
+    mustChangePassword: true,
+    temporaryPasswordExpiresAt: Date.now() + 60_000,
+    failedLoginCount: 0,
+    lockedUntil: null,
+    roles: [],
     active: true,
   });
   return repository;
@@ -149,5 +170,99 @@ describe("G0-03 auth HTTP security boundary", () => {
       repository,
     );
     expect(await wrongScope?.json()).toEqual({ allowed: false });
+  });
+
+  it("conceals the legacy bridge unless explicitly enabled", async () => {
+    const repository = await legacyFixture();
+    const response = await handleAuthHttpRequest(
+      new Request("https://example.test/api/v1/auth/legacy-parameters?username=legacy.http"),
+      repository,
+    );
+    expect(response?.status).toBe(404);
+  });
+
+  it("migrates a proven legacy PBKDF2 account to scrypt and creates a forced-change session", async () => {
+    const repository = await legacyFixture();
+    const options = { legacyBridgeEnabled: true };
+
+    const parameters = await handleAuthHttpRequest(
+      new Request("https://example.test/api/v1/auth/legacy-parameters?username=legacy.http"),
+      repository,
+      options,
+    );
+    expect(parameters?.status).toBe(200);
+    expect(await parameters?.json()).toEqual({
+      algorithm: "PBKDF2",
+      hash: "SHA-256",
+      iterations: 600_000,
+      salt: LEGACY_SALT,
+    });
+
+    const migrated = await handleAuthHttpRequest(
+      new Request("https://example.test/api/v1/auth/legacy-login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "cf-connecting-ip": "198.51.100.44",
+        },
+        body: JSON.stringify({
+          username: "legacy.http",
+          password: LEGACY_PASSWORD,
+          proof: LEGACY_DIGEST,
+        }),
+      }),
+      repository,
+      options,
+    );
+
+    expect(migrated?.status).toBe(200);
+    expect(migrated?.headers.get("set-cookie")).toContain("__Host-sop_session=");
+    expect(await migrated?.json()).toMatchObject({
+      authenticated: true,
+      mustChangePassword: true,
+      user: { username: "legacy.http" },
+    });
+
+    const updated = await repository.findUserByUsername("legacy.http");
+    expect(updated?.passwordHash.startsWith("scrypt$32768$8$1$")).toBe(true);
+    expect(updated?.failedLoginCount).toBe(0);
+
+    const bridgeAfterMigration = await handleAuthHttpRequest(
+      new Request("https://example.test/api/v1/auth/legacy-parameters?username=legacy.http"),
+      repository,
+      options,
+    );
+    expect(bridgeAfterMigration?.status).toBe(404);
+  });
+
+  it("keeps legacy proof failures generic and does not migrate the stored hash", async () => {
+    const repository = await legacyFixture();
+    const response = await handleAuthHttpRequest(
+      new Request("https://example.test/api/v1/auth/legacy-login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "cf-connecting-ip": "198.51.100.45",
+        },
+        body: JSON.stringify({
+          username: "legacy.http",
+          password: "Wrong-Legacy-Password!",
+          proof: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        }),
+      }),
+      repository,
+      { legacyBridgeEnabled: true },
+    );
+
+    expect(response?.status).toBe(401);
+    expect(await response?.json()).toEqual({
+      error: {
+        code: "INVALID_CREDENTIALS",
+        message: "Tên đăng nhập hoặc mật khẩu không đúng.",
+      },
+    });
+    const unchanged = await repository.findUserByUsername("legacy.http");
+    expect(unchanged?.passwordHash).toBe(LEGACY_HASH);
+    expect(unchanged?.failedLoginCount).toBe(1);
   });
 });
