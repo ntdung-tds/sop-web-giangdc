@@ -172,13 +172,13 @@ export async function handleAuthHttpRequest(
   const service = new AuthService(repository, options.policy ?? AUTH_POLICY_DEFAULTS);
 
   if (url.pathname === "/api/v1/auth/bootstrap") {
-    if (request.method !== "POST") return methodNotAllowed("POST");
     const configuredToken = options.bootstrapToken ?? "";
     const suppliedToken = request.headers.get("x-bootstrap-token") ?? "";
     if (!configuredToken || !suppliedToken || !(await secureStringEqual(suppliedToken, configuredToken))) {
       return notFound();
     }
     if ((await repository.countUsers()) !== 0) return notFound();
+    if (request.method !== "POST") return methodNotAllowed("POST");
 
     const body = await readJson<BootstrapBody>(request);
     if (
