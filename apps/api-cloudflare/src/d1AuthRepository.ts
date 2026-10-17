@@ -65,6 +65,26 @@ function normalizeUsername(username: string): string {
   return username.trim().toLocaleLowerCase("en-US");
 }
 
+function normalizeBase64(value: string): string | null {
+  const standard = value.replaceAll("-", "+").replaceAll("_", "/");
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(standard)) return null;
+  const unpadded = standard.replace(/=+$/, "");
+  const remainder = unpadded.length % 4;
+  if (remainder === 1) return null;
+  return `${unpadded}${"=".repeat((4 - remainder) % 4)}`;
+}
+
+function normalizePersistedPasswordHash(value: string): string {
+  const parts = value.split("$");
+  if (parts.length !== 4) return value;
+  const [algorithm, iterations, saltRaw, digestRaw] = parts;
+  if (algorithm !== "pbkdf2-sha256" || !iterations || !saltRaw || !digestRaw) return value;
+  const salt = normalizeBase64(saltRaw);
+  const digest = normalizeBase64(digestRaw);
+  if (!salt || !digest) return "invalid-password-hash";
+  return `${algorithm}$${iterations}$${salt}$${digest}`;
+}
+
 function parseRoles(value: string): RoleAssignment[] {
   try {
     const parsed: unknown = JSON.parse(value);
@@ -88,7 +108,7 @@ function mapUser(row: UserRow): AuthUserRecord {
     id: row.id,
     username: row.username,
     displayName: row.display_name,
-    passwordHash: row.password_hash,
+    passwordHash: normalizePersistedPasswordHash(row.password_hash),
     mustChangePassword: row.must_change_password === 1,
     failedLoginCount: row.failed_login_count,
     lockedUntil: row.locked_until,
