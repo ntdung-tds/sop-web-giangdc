@@ -167,10 +167,12 @@ function resolvePolicy(policy: AuthPolicy): ResolvedAuthPolicy {
     pbkdf2Iterations: policy.pbkdf2Iterations,
     sourceRateLimitThreshold:
       policy.sourceRateLimitThreshold ?? AUTH_POLICY_DEFAULTS.sourceRateLimitThreshold ?? 20,
-    sourceRateWindowMs: policy.sourceRateWindowMs ?? AUTH_POLICY_DEFAULTS.sourceRateWindowMs ?? 15 * 60_000,
+    sourceRateWindowMs:
+      policy.sourceRateWindowMs ?? AUTH_POLICY_DEFAULTS.sourceRateWindowMs ?? 15 * 60_000,
     sourceBlockDurationMs:
       policy.sourceBlockDurationMs ?? AUTH_POLICY_DEFAULTS.sourceBlockDurationMs ?? 15 * 60_000,
-    minimumPasswordLength: policy.minimumPasswordLength ?? AUTH_POLICY_DEFAULTS.minimumPasswordLength ?? 12,
+    minimumPasswordLength:
+      policy.minimumPasswordLength ?? AUTH_POLICY_DEFAULTS.minimumPasswordLength ?? 12,
   };
 }
 
@@ -208,7 +210,11 @@ function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
   return difference === 0;
 }
 
-async function pbkdf2(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
+async function pbkdf2(
+  password: string,
+  salt: Uint8Array,
+  iterations: number,
+): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(password),
@@ -438,7 +444,7 @@ export class AuthService {
     scopeId: string,
   ): Promise<boolean> {
     const resolved = await this.resolveSession(sessionToken);
-    if (!resolved) return false;
+    if (!resolved || resolved.user.mustChangePassword) return false;
     return resolved.user.roles.some((assignment) => {
       const scopeMatches = assignment.scopeId === "*" || assignment.scopeId === scopeId;
       return scopeMatches && ROLE_PERMISSIONS[assignment.role].includes(permission);
