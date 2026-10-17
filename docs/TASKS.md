@@ -9,4 +9,4 @@
 | G0-01E | Prototype UI | verified | Chủ dự án xác nhận đúng landing/login/dashboard G0-01 |
 | G0-01F | StageSign Pages | verified | `https://sopweb-giangdc-stagesign.pages.dev/` chạy đúng baseline |
 | G0-02A | Non-visual technical foundation | verified | PR #10; RED→GREEN CI; production smoke pass |
-| G0-02B | Migrate baseline UI sang React/Vite | done | PR #11; RED→GREEN CI; CSS exact; preview desktop/mobile pixel parity + interaction pass; chờ production verify |
+| G0-02B | Migrate baseline UI sang React/Vite | verified | PR #11; CSS exact baseline; post-merge CI `39020899697`; production deploy `e8a73da3-dea2-442d-b399-c9bb2164e090`; stable desktop/mobile parity + mobile login flow pass |
