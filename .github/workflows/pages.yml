@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'site/**'
+      - 'apps/web/**'
+      - 'package.json'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -26,16 +27,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Build web
+        run: npm run build -w @sop/web
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - name: Upload static prototype
+      - name: Upload web artifact
         uses: actions/upload-pages-artifact@v3
         with:
           name: github-pages-${{ github.run_attempt }}
-          path: site
-      - name: Deploy to GitHub Pages
+          path: apps/web/dist
+      - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
         with:
