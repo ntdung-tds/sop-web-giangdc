@@ -36,11 +36,15 @@ export function App() {
   const otherIssueCount = issues.length - roleIssueCount;
 
   function reorder(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= draft.steps.length) {
+    const currentDraft = process.versions.at(-1);
+    if (currentDraft === undefined) {
       return;
     }
-    const nextDraft = moveStep(draft, index, target);
+    const target = index + direction;
+    if (target < 0 || target >= currentDraft.steps.length) {
+      return;
+    }
+    const nextDraft = moveStep(currentDraft, index, target);
     setProcess((current) => replaceVersion(current, nextDraft));
   }
 
