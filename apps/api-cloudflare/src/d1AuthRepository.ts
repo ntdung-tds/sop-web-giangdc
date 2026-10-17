@@ -30,6 +30,7 @@ interface UserRow {
   display_name: string;
   password_hash: string;
   must_change_password: number;
+  temporary_password_expires_at: number | null;
   failed_login_count: number;
   locked_until: number | null;
   roles_json: string;
@@ -110,6 +111,7 @@ function mapUser(row: UserRow): AuthUserRecord {
     displayName: row.display_name,
     passwordHash: normalizePersistedPasswordHash(row.password_hash),
     mustChangePassword: row.must_change_password === 1,
+    temporaryPasswordExpiresAt: row.temporary_password_expires_at,
     failedLoginCount: row.failed_login_count,
     lockedUntil: row.locked_until,
     roles: parseRoles(row.roles_json),
@@ -136,7 +138,8 @@ export class D1AuthRepository implements AuthRepository {
     const row = await this.db
       .prepare(
         `SELECT id, username, display_name, password_hash, must_change_password,
-                failed_login_count, locked_until, roles_json, active
+                temporary_password_expires_at, failed_login_count, locked_until,
+                roles_json, active
            FROM auth_users
           WHERE username_norm = ?1
           LIMIT 1`,
@@ -150,7 +153,8 @@ export class D1AuthRepository implements AuthRepository {
     const row = await this.db
       .prepare(
         `SELECT id, username, display_name, password_hash, must_change_password,
-                failed_login_count, locked_until, roles_json, active
+                temporary_password_expires_at, failed_login_count, locked_until,
+                roles_json, active
            FROM auth_users
           WHERE id = ?1
           LIMIT 1`,
@@ -166,15 +170,16 @@ export class D1AuthRepository implements AuthRepository {
       .prepare(
         `INSERT INTO auth_users (
            id, username, username_norm, display_name, password_hash,
-           must_change_password, failed_login_count, locked_until, roles_json,
-           active, created_at, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+           must_change_password, temporary_password_expires_at, failed_login_count,
+           locked_until, roles_json, active, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)
          ON CONFLICT(id) DO UPDATE SET
            username = excluded.username,
            username_norm = excluded.username_norm,
            display_name = excluded.display_name,
            password_hash = excluded.password_hash,
            must_change_password = excluded.must_change_password,
+           temporary_password_expires_at = excluded.temporary_password_expires_at,
            failed_login_count = excluded.failed_login_count,
            locked_until = excluded.locked_until,
            roles_json = excluded.roles_json,
@@ -188,6 +193,7 @@ export class D1AuthRepository implements AuthRepository {
         user.displayName,
         user.passwordHash,
         user.mustChangePassword ? 1 : 0,
+        user.temporaryPasswordExpiresAt ?? null,
         user.failedLoginCount,
         user.lockedUntil,
         JSON.stringify(user.roles),
@@ -210,10 +216,10 @@ export class D1AuthRepository implements AuthRepository {
       .prepare(
         `INSERT OR IGNORE INTO auth_users (
            id, username, username_norm, display_name, password_hash,
-           must_change_password, failed_login_count, locked_until, roles_json,
-           active, created_at, updated_at, bootstrap_origin
+           must_change_password, temporary_password_expires_at, failed_login_count,
+           locked_until, roles_json, active, created_at, updated_at, bootstrap_origin
          )
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, 1
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, 1
           WHERE NOT EXISTS (SELECT 1 FROM auth_users LIMIT 1)`,
       )
       .bind(
@@ -223,6 +229,7 @@ export class D1AuthRepository implements AuthRepository {
         user.displayName,
         user.passwordHash,
         user.mustChangePassword ? 1 : 0,
+        user.temporaryPasswordExpiresAt ?? null,
         user.failedLoginCount,
         user.lockedUntil,
         JSON.stringify(user.roles),
