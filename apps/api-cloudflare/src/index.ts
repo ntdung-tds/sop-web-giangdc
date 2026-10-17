@@ -4,6 +4,7 @@ import { D1AuthRepository, type D1DatabaseLike } from "./d1AuthRepository.ts";
 
 interface Env {
   SOP_DB?: D1DatabaseLike;
+  SOP_BOOTSTRAP_TOKEN?: string;
 }
 
 export async function handleCloudflareRequest(request: Request, env: Env = {}): Promise<Response> {
@@ -25,7 +26,9 @@ export async function handleCloudflareRequest(request: Request, env: Env = {}): 
         { status: 503, headers: { "cache-control": "no-store" } },
       );
     }
-    const authResponse = await handleAuthHttpRequest(request, new D1AuthRepository(env.SOP_DB));
+    const authResponse = await handleAuthHttpRequest(request, new D1AuthRepository(env.SOP_DB), {
+      bootstrapToken: env.SOP_BOOTSTRAP_TOKEN,
+    });
     if (authResponse) return authResponse;
   }
 
