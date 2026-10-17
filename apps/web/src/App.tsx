@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 const modules = [
   ["01", "Quy trình", "Phiên bản, bước, điều kiện và phê duyệt"],
   ["02", "Thực thi", "Theo dõi tiến độ, bằng chứng và trạng thái"],
@@ -6,6 +8,8 @@ const modules = [
 ];
 
 export function App() {
+  const foundationId = useId();
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -28,10 +32,10 @@ export function App() {
           </p>
           <div className="actions">
             <button type="button">Mở không gian làm việc</button>
-            <a href="#foundation">Xem nền móng kỹ thuật</a>
+            <a href={`#${foundationId}`}>Xem nền móng kỹ thuật</a>
           </div>
         </div>
-        <div className="heroCard" aria-label="Trạng thái hệ thống mẫu">
+        <aside className="heroCard" aria-label="Trạng thái hệ thống mẫu">
           <div className="heroCardHead">
             <span>Trạng thái nền tảng</span>
             <span className="dot" />
@@ -40,10 +44,10 @@ export function App() {
           <div className="metric"><b>/api/v1/health</b><span>API contract</span></div>
           <div className="metric"><b>Node + Cloudflare</b><span>Runtime adapters</span></div>
           <div className="metric"><b>CI required</b><span>Lint · typecheck · test · build</span></div>
-        </div>
+        </aside>
       </section>
 
-      <section id="foundation" className="grid">
+      <section id={foundationId} className="grid">
         {modules.map(([id, title, text]) => (
           <article className="module" key={id}>
             <span className="moduleId">{id}</span>
