@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { verifyPassword } from "@sop/application";
 
+// Regression for StageSign preview hashes provisioned outside the runtime helper.
 describe("G0-03F password hash compatibility", () => {
   it("accepts URL-safe base64 without padding for a valid PBKDF2 hash", async () => {
     const encoded =
