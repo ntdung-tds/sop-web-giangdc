@@ -1,6 +1,7 @@
 import {
   AUTH_POLICY_DEFAULTS,
   AuthService,
+  type AuthPolicy,
   type AuthRepository,
 } from "@sop/application";
 
@@ -21,6 +22,17 @@ interface ChangePasswordBody {
   newPassword?: unknown;
 }
 
+interface BootstrapBody {
+  username?: unknown;
+  displayName?: unknown;
+  initialPassword?: unknown;
+}
+
+export interface AuthHttpOptions {
+  bootstrapToken?: string;
+  policy?: AuthPolicy;
+}
+
 function json(body: unknown, status = 200, extraHeaders: HeadersInit = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -33,6 +45,13 @@ function methodNotAllowed(allowed: string): Response {
     { error: { code: "METHOD_NOT_ALLOWED", message: "Phương thức không được hỗ trợ." } },
     405,
     { allow: allowed },
+  );
+}
+
+function notFound(): Response {
+  return json(
+    { error: { code: "NOT_FOUND", message: "Resource not found" } },
+    404,
   );
 }
 
@@ -130,12 +149,73 @@ function isValidOpaqueCode(value: string): boolean {
   return value.length > 0 && value.length <= 128 && !/\s/.test(value);
 }
 
+async function sha256(value: string): Promise<Uint8Array> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return new Uint8Array(digest);
+}
+
+async function secureStringEqual(actual: string, expected: string): Promise<boolean> {
+  const [left, right] = await Promise.all([sha256(actual), sha256(expected)]);
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
+  }
+  return difference === 0;
+}
+
 export async function handleAuthHttpRequest(
   request: Request,
   repository: AuthRepository,
+  options: AuthHttpOptions = {},
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  const service = new AuthService(repository, AUTH_POLICY_DEFAULTS);
+  const service = new AuthService(repository, options.policy ?? AUTH_POLICY_DEFAULTS);
+
+  if (url.pathname === "/api/v1/auth/bootstrap") {
+    if (request.method !== "POST") return methodNotAllowed("POST");
+    const configuredToken = options.bootstrapToken ?? "";
+    const suppliedToken = request.headers.get("x-bootstrap-token") ?? "";
+    if (!configuredToken || !suppliedToken || !(await secureStringEqual(suppliedToken, configuredToken))) {
+      return notFound();
+    }
+    if ((await repository.countUsers()) !== 0) return notFound();
+
+    const body = await readJson<BootstrapBody>(request);
+    if (
+      !body ||
+      typeof body.username !== "string" ||
+      typeof body.displayName !== "string" ||
+      typeof body.initialPassword !== "string"
+    ) {
+      return json(
+        { error: { code: "INVALID_INPUT", message: "Thông tin khởi tạo không hợp lệ." } },
+        400,
+      );
+    }
+
+    const result = await service.bootstrapFirstUser({
+      username: body.username,
+      displayName: body.displayName,
+      initialPassword: body.initialPassword,
+    });
+    if (!result.ok) {
+      if (result.code === "BOOTSTRAP_UNAVAILABLE") return notFound();
+      return json(
+        {
+          error: {
+            code: result.code,
+            message:
+              result.code === "PASSWORD_POLICY"
+                ? "Mật khẩu khởi tạo không đáp ứng chính sách."
+                : "Thông tin khởi tạo không hợp lệ.",
+          },
+        },
+        400,
+      );
+    }
+
+    return json({ created: true, mustChangePassword: true }, 201);
+  }
 
   if (url.pathname === "/api/v1/auth/login") {
     if (request.method !== "POST") return methodNotAllowed("POST");
