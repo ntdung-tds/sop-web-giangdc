@@ -12,6 +12,7 @@ export interface AuthUserRecord {
   displayName: string;
   passwordHash: string;
   mustChangePassword: boolean;
+  temporaryPasswordExpiresAt?: number | null;
   failedLoginCount: number;
   lockedUntil: number | null;
   roles: RoleAssignment[];
@@ -59,6 +60,7 @@ export interface AuthPolicy {
   sourceRateWindowMs?: number;
   sourceBlockDurationMs?: number;
   minimumPasswordLength?: number;
+  temporaryPasswordTtlMs?: number;
 }
 
 interface ResolvedAuthPolicy {
@@ -70,6 +72,7 @@ interface ResolvedAuthPolicy {
   sourceRateWindowMs: number;
   sourceBlockDurationMs: number;
   minimumPasswordLength: number;
+  temporaryPasswordTtlMs: number;
 }
 
 export const AUTH_POLICY_DEFAULTS: AuthPolicy = {
@@ -81,6 +84,7 @@ export const AUTH_POLICY_DEFAULTS: AuthPolicy = {
   sourceRateWindowMs: 15 * 60_000,
   sourceBlockDurationMs: 15 * 60_000,
   minimumPasswordLength: 12,
+  temporaryPasswordTtlMs: 48 * 60 * 60_000,
 };
 
 export interface PublicAuthUser {
@@ -160,6 +164,8 @@ function resolvePolicy(policy: AuthPolicy): ResolvedAuthPolicy {
       policy.sourceBlockDurationMs ?? AUTH_POLICY_DEFAULTS.sourceBlockDurationMs ?? 15 * 60_000,
     minimumPasswordLength:
       policy.minimumPasswordLength ?? AUTH_POLICY_DEFAULTS.minimumPasswordLength ?? 12,
+    temporaryPasswordTtlMs:
+      policy.temporaryPasswordTtlMs ?? AUTH_POLICY_DEFAULTS.temporaryPasswordTtlMs ?? 48 * 60 * 60_000,
   };
 }
 
@@ -400,12 +406,14 @@ export class AuthService {
       input.initialPassword,
       this.policy.pbkdf2Iterations,
     );
+    const now = this.now();
     const created = await this.repository.saveBootstrapUser({
       id: userId,
       username,
       displayName,
       passwordHash,
       mustChangePassword: true,
+      temporaryPasswordExpiresAt: now + this.policy.temporaryPasswordTtlMs,
       failedLoginCount: 0,
       lockedUntil: null,
       roles: [],
@@ -442,6 +450,15 @@ export class AuthService {
         failedLoginCount: shouldLock ? 0 : nextFailureCount,
         lockedUntil: shouldLock ? now + this.policy.lockoutDurationMs : null,
       });
+      await this.recordSourceFailure(input.source, now);
+      return { ok: false, error: INVALID_CREDENTIALS };
+    }
+
+    const temporaryPasswordExpired =
+      user.mustChangePassword &&
+      typeof user.temporaryPasswordExpiresAt === "number" &&
+      user.temporaryPasswordExpiresAt <= now;
+    if (temporaryPasswordExpired) {
       await this.recordSourceFailure(input.source, now);
       return { ok: false, error: INVALID_CREDENTIALS };
     }
@@ -504,6 +521,7 @@ export class AuthService {
       ...resolved.user,
       passwordHash,
       mustChangePassword: false,
+      temporaryPasswordExpiresAt: null,
       failedLoginCount: 0,
       lockedUntil: null,
     });
