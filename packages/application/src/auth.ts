@@ -39,6 +39,8 @@ export interface AuthRepository {
   findUserByUsername(username: string): Promise<AuthUserRecord | null>;
   findUserById(userId: string): Promise<AuthUserRecord | null>;
   saveUser(user: AuthUserRecord): Promise<void>;
+  countUsers(): Promise<number>;
+  saveBootstrapUser(user: AuthUserRecord): Promise<boolean>;
   findSessionByTokenHash(tokenHash: string): Promise<AuthSessionRecord | null>;
   saveSession(session: AuthSessionRecord): Promise<void>;
   revokeSession(sessionId: string, revokedAt: number): Promise<void>;
@@ -101,6 +103,16 @@ export interface LoginInput {
   password: string;
   source: string;
 }
+
+export interface BootstrapFirstUserInput {
+  username: string;
+  displayName: string;
+  initialPassword: string;
+}
+
+export type BootstrapFirstUserResult =
+  | { ok: true; userId: string }
+  | { ok: false; code: "BOOTSTRAP_UNAVAILABLE" | "PASSWORD_POLICY" | "INVALID_INPUT" };
 
 export interface AuthFailure {
   code: "INVALID_CREDENTIALS" | "INVALID_SESSION" | "PASSWORD_POLICY";
@@ -267,6 +279,18 @@ export class InMemoryAuthRepository implements AuthRepository {
     this.users.set(user.id, structuredClone(user));
   }
 
+  async countUsers(): Promise<number> {
+    return this.users.size;
+  }
+
+  async saveBootstrapUser(user: AuthUserRecord): Promise<boolean> {
+    if (this.users.size !== 0) return false;
+    const duplicate = await this.findUserByUsername(user.username);
+    if (duplicate) return false;
+    this.users.set(user.id, structuredClone(user));
+    return true;
+  }
+
   async findSessionByTokenHash(tokenHash: string): Promise<AuthSessionRecord | null> {
     for (const session of this.sessions.values()) {
       if (session.tokenHash === tokenHash) return structuredClone(session);
@@ -328,6 +352,38 @@ export class AuthService {
     this.now = dependencies.now ?? (() => Date.now());
     this.randomBytes =
       dependencies.randomBytes ?? ((length) => crypto.getRandomValues(new Uint8Array(length)));
+  }
+
+  async bootstrapFirstUser(input: BootstrapFirstUserInput): Promise<BootstrapFirstUserResult> {
+    const username = input.username.trim();
+    const displayName = input.displayName.trim();
+    if (username.length < 3 || username.length > 128 || displayName.length < 1 || displayName.length > 200) {
+      return { ok: false, code: "INVALID_INPUT" };
+    }
+    if (input.initialPassword.length < this.policy.minimumPasswordLength) {
+      return { ok: false, code: "PASSWORD_POLICY" };
+    }
+    if ((await this.repository.countUsers()) !== 0) {
+      return { ok: false, code: "BOOTSTRAP_UNAVAILABLE" };
+    }
+
+    const userId = `usr_${randomToken(this.randomBytes, 18)}`;
+    const passwordHash = await createPasswordHash(
+      input.initialPassword,
+      this.policy.pbkdf2Iterations,
+    );
+    const created = await this.repository.saveBootstrapUser({
+      id: userId,
+      username,
+      displayName,
+      passwordHash,
+      mustChangePassword: true,
+      failedLoginCount: 0,
+      lockedUntil: null,
+      roles: [],
+      active: true,
+    });
+    return created ? { ok: true, userId } : { ok: false, code: "BOOTSTRAP_UNAVAILABLE" };
   }
 
   async login(input: LoginInput): Promise<LoginResult> {
