@@ -1,7 +1,6 @@
 import {
   AUTH_POLICY_DEFAULTS,
   AuthService,
-  type AuthPermission,
   type AuthRepository,
 } from "@sop/application";
 
@@ -11,17 +10,6 @@ const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "x-content-type-options": "nosniff",
 } as const;
-
-const AUTH_PERMISSIONS: readonly AuthPermission[] = [
-  "users.manage",
-  "audit.read",
-  "process.read",
-  "process.manage",
-  "process.review",
-  "execution.read",
-  "execution.run",
-  "exception.review",
-];
 
 interface LoginBody {
   username?: unknown;
@@ -138,6 +126,10 @@ function hasValidCsrf(request: Request, expected: string): boolean {
   return actual.length > 0 && actual === expected;
 }
 
+function isValidOpaqueCode(value: string): boolean {
+  return value.length > 0 && value.length <= 128 && !/\s/.test(value);
+}
+
 export async function handleAuthHttpRequest(
   request: Request,
   repository: AuthRepository,
@@ -241,12 +233,15 @@ export async function handleAuthHttpRequest(
     if (request.method !== "GET") return methodNotAllowed("GET");
     const required = await requireSession(request, service);
     if (required instanceof Response) return required;
-    const permission = url.searchParams.get("permission") as AuthPermission | null;
-    const scopeId = url.searchParams.get("scopeId") ?? "";
-    if (!permission || !AUTH_PERMISSIONS.includes(permission) || !scopeId) {
-      return json({ error: { code: "BAD_REQUEST", message: "Yêu cầu phân quyền không hợp lệ." } }, 400);
+    const permissionCode = url.searchParams.get("permission")?.trim() ?? "";
+    const scopeId = url.searchParams.get("scopeId")?.trim() ?? "";
+    if (!isValidOpaqueCode(permissionCode) || !isValidOpaqueCode(scopeId)) {
+      return json(
+        { error: { code: "BAD_REQUEST", message: "Yêu cầu phân quyền không hợp lệ." } },
+        400,
+      );
     }
-    return json({ allowed: await service.isAllowed(required.token, permission, scopeId) });
+    return json({ allowed: await service.isAllowed(required.token, permissionCode, scopeId) });
   }
 
   return null;
