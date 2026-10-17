@@ -3,6 +3,7 @@ import {
   AuthService,
   InMemoryAuthRepository,
   createPasswordHash,
+  verifyPassword,
   type AuthPolicy,
 } from "@sop/application";
 
@@ -13,15 +14,19 @@ const TEST_POLICY: AuthPolicy = {
   pbkdf2Iterations: 1_000,
 };
 
-async function buildService(now = Date.UTC(2026, 9, 17, 10, 0, 0)) {
+async function buildService(
+  now = Date.UTC(2026, 9, 17, 10, 0, 0),
+  mustChangePassword = true,
+  policy: AuthPolicy = TEST_POLICY,
+) {
   const repository = new InMemoryAuthRepository();
-  const passwordHash = await createPasswordHash("Correct-Horse-42!", TEST_POLICY.pbkdf2Iterations);
+  const passwordHash = await createPasswordHash("Correct-Horse-42!", policy.pbkdf2Iterations);
   await repository.saveUser({
     id: "usr-operator-1",
     username: "operator.demo",
     displayName: "Người vận hành demo",
     passwordHash,
-    mustChangePassword: true,
+    mustChangePassword,
     failedLoginCount: 0,
     lockedUntil: null,
     roles: [{ role: "OPERATOR", scopeId: "unit-a" }],
@@ -29,7 +34,7 @@ async function buildService(now = Date.UTC(2026, 9, 17, 10, 0, 0)) {
   });
 
   let clock = now;
-  const service = new AuthService(repository, TEST_POLICY, {
+  const service = new AuthService(repository, policy, {
     now: () => clock,
   });
 
@@ -43,11 +48,29 @@ async function buildService(now = Date.UTC(2026, 9, 17, 10, 0, 0)) {
 }
 
 describe("G0-03 Authentication Foundation", () => {
+  it("creates salted password hashes without retaining plaintext", async () => {
+    const first = await createPasswordHash("Correct-Horse-42!", 1_000);
+    const second = await createPasswordHash("Correct-Horse-42!", 1_000);
+
+    expect(first).not.toBe(second);
+    expect(first).not.toContain("Correct-Horse-42!");
+    expect(await verifyPassword("Correct-Horse-42!", first)).toBe(true);
+    expect(await verifyPassword("wrong", first)).toBe(false);
+  });
+
   it("returns the same safe error for unknown users and wrong passwords", async () => {
     const { service } = await buildService();
 
-    const unknown = await service.login({ username: "missing", password: "bad", source: "198.51.100.10" });
-    const wrong = await service.login({ username: "operator.demo", password: "bad", source: "198.51.100.10" });
+    const unknown = await service.login({
+      username: "missing",
+      password: "bad",
+      source: "198.51.100.10",
+    });
+    const wrong = await service.login({
+      username: "operator.demo",
+      password: "bad",
+      source: "198.51.100.10",
+    });
 
     expect(unknown.ok).toBe(false);
     expect(wrong.ok).toBe(false);
@@ -81,6 +104,28 @@ describe("G0-03 Authentication Foundation", () => {
     expect(afterWindow.ok).toBe(true);
   });
 
+  it("rate-limits repeated failures by source without exposing the reason", async () => {
+    const policy: AuthPolicy = {
+      ...TEST_POLICY,
+      lockoutThreshold: 10,
+      sourceRateLimitThreshold: 2,
+      sourceRateWindowMs: 60_000,
+      sourceBlockDurationMs: 60_000,
+    };
+    const { service } = await buildService(undefined, false, policy);
+
+    await service.login({ username: "missing-a", password: "bad", source: "203.0.113.9" });
+    await service.login({ username: "missing-b", password: "bad", source: "203.0.113.9" });
+    const blocked = await service.login({
+      username: "operator.demo",
+      password: "Correct-Horse-42!",
+      source: "203.0.113.9",
+    });
+
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.error.code).toBe("INVALID_CREDENTIALS");
+  });
+
   it("marks first-login sessions for mandatory password change", async () => {
     const { service } = await buildService();
     const result = await service.login({
@@ -93,6 +138,7 @@ describe("G0-03 Authentication Foundation", () => {
     if (result.ok) {
       expect(result.session.mustChangePassword).toBe(true);
       expect(result.session.user.roles).toEqual([{ role: "OPERATOR", scopeId: "unit-a" }]);
+      expect(await service.isAllowed(result.session.token, "execution.read", "unit-a")).toBe(false);
     }
   });
 
@@ -132,7 +178,7 @@ describe("G0-03 Authentication Foundation", () => {
   });
 
   it("enforces negative RBAC checks instead of trusting the client", async () => {
-    const { service } = await buildService();
+    const { service } = await buildService(undefined, false);
     const login = await service.login({
       username: "operator.demo",
       password: "Correct-Horse-42!",
@@ -145,10 +191,33 @@ describe("G0-03 Authentication Foundation", () => {
     expect(await service.isAllowed(login.session.token, "execution.read", "unit-b")).toBe(false);
   });
 
+  it("denies expired sessions", async () => {
+    const { service, advance } = await buildService(undefined, false);
+    const login = await service.login({
+      username: "operator.demo",
+      password: "Correct-Horse-42!",
+      source: "198.51.100.10",
+    });
+    if (!login.ok) throw new Error("fixture login failed");
+
+    advance(TEST_POLICY.sessionTtlMs + 1);
+
+    expect(await service.getSession(login.session.token)).toBeNull();
+    expect(await service.isAllowed(login.session.token, "execution.read", "unit-a")).toBe(false);
+  });
+
   it("logout-all revokes every active session for the user", async () => {
-    const { service } = await buildService();
-    const first = await service.login({ username: "operator.demo", password: "Correct-Horse-42!", source: "a" });
-    const second = await service.login({ username: "operator.demo", password: "Correct-Horse-42!", source: "b" });
+    const { service } = await buildService(undefined, false);
+    const first = await service.login({
+      username: "operator.demo",
+      password: "Correct-Horse-42!",
+      source: "a",
+    });
+    const second = await service.login({
+      username: "operator.demo",
+      password: "Correct-Horse-42!",
+      source: "b",
+    });
     if (!first.ok || !second.ok) throw new Error("fixture login failed");
 
     await service.logoutAll(first.session.token);
