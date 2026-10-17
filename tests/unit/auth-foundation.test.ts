@@ -14,12 +14,16 @@ const TEST_POLICY: AuthPolicy = {
   pbkdf2Iterations: 1_000,
 };
 
+const FIXTURE_ROLE = "fixture.operator";
+const FIXTURE_PERMISSION = "fixture.execution.read";
+
 async function buildService(
   now = Date.UTC(2026, 9, 17, 10, 0, 0),
   mustChangePassword = true,
   policy: AuthPolicy = TEST_POLICY,
 ) {
   const repository = new InMemoryAuthRepository();
+  repository.grantRolePermission(FIXTURE_ROLE, FIXTURE_PERMISSION);
   const passwordHash = await createPasswordHash("Correct-Horse-42!", policy.pbkdf2Iterations);
   await repository.saveUser({
     id: "usr-operator-1",
@@ -29,7 +33,7 @@ async function buildService(
     mustChangePassword,
     failedLoginCount: 0,
     lockedUntil: null,
-    roles: [{ role: "OPERATOR", scopeId: "unit-a" }],
+    roles: [{ roleCode: FIXTURE_ROLE, scopeId: "unit-a" }],
     active: true,
   });
 
@@ -126,7 +130,7 @@ describe("G0-03 Authentication Foundation", () => {
     if (!blocked.ok) expect(blocked.error.code).toBe("INVALID_CREDENTIALS");
   });
 
-  it("marks first-login sessions for mandatory password change", async () => {
+  it("marks first-login sessions for mandatory password change and blocks business permissions", async () => {
     const { service } = await buildService();
     const result = await service.login({
       username: "operator.demo",
@@ -137,8 +141,10 @@ describe("G0-03 Authentication Foundation", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.session.mustChangePassword).toBe(true);
-      expect(result.session.user.roles).toEqual([{ role: "OPERATOR", scopeId: "unit-a" }]);
-      expect(await service.isAllowed(result.session.token, "execution.read", "unit-a")).toBe(false);
+      expect(result.session.user.roles).toEqual([
+        { roleCode: FIXTURE_ROLE, scopeId: "unit-a" },
+      ]);
+      expect(await service.isAllowed(result.session.token, FIXTURE_PERMISSION, "unit-a")).toBe(false);
     }
   });
 
@@ -177,7 +183,7 @@ describe("G0-03 Authentication Foundation", () => {
     if (newPassword.ok) expect(newPassword.session.mustChangePassword).toBe(false);
   });
 
-  it("enforces negative RBAC checks instead of trusting the client", async () => {
+  it("uses the persisted role catalog for RBAC and scope negative checks", async () => {
     const { service } = await buildService(undefined, false);
     const login = await service.login({
       username: "operator.demo",
@@ -186,9 +192,9 @@ describe("G0-03 Authentication Foundation", () => {
     });
     if (!login.ok) throw new Error("fixture login failed");
 
-    expect(await service.isAllowed(login.session.token, "execution.read", "unit-a")).toBe(true);
-    expect(await service.isAllowed(login.session.token, "users.manage", "unit-a")).toBe(false);
-    expect(await service.isAllowed(login.session.token, "execution.read", "unit-b")).toBe(false);
+    expect(await service.isAllowed(login.session.token, FIXTURE_PERMISSION, "unit-a")).toBe(true);
+    expect(await service.isAllowed(login.session.token, "fixture.not-granted", "unit-a")).toBe(false);
+    expect(await service.isAllowed(login.session.token, FIXTURE_PERMISSION, "unit-b")).toBe(false);
   });
 
   it("denies expired sessions", async () => {
@@ -203,7 +209,7 @@ describe("G0-03 Authentication Foundation", () => {
     advance(TEST_POLICY.sessionTtlMs + 1);
 
     expect(await service.getSession(login.session.token)).toBeNull();
-    expect(await service.isAllowed(login.session.token, "execution.read", "unit-a")).toBe(false);
+    expect(await service.isAllowed(login.session.token, FIXTURE_PERMISSION, "unit-a")).toBe(false);
   });
 
   it("logout-all revokes every active session for the user", async () => {
