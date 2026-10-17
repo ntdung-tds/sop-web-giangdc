@@ -41,19 +41,19 @@ export function App() {
               <p>Thiết kế, phát hành và thực hiện SOP theo đúng phiên bản; thu bằng chứng theo từng bước; xử lý ngoại lệ và xem lại toàn bộ lịch sử.</p>
             </div>
 
-            <div className="feature-grid" role="group" aria-label="Năng lực chính">
+            <section className="feature-grid" aria-label="Năng lực chính">
               <article><span>01</span><h2>Đa quy trình</h2><p>Quản lý nhiều SOP độc lập theo đơn vị và phạm vi.</p></article>
               <article><span>02</span><h2>Kiểm soát phiên bản</h2><p>Lượt đang chạy giữ nguyên snapshot đã phát hành.</p></article>
               <article><span>03</span><h2>Hiện trường mobile</h2><p>Thao tác theo bước, bằng chứng và trạng thái đồng bộ.</p></article>
               <article><span>04</span><h2>Truy vết đầy đủ</h2><p>Biết ai làm gì, khi nào và quyết định nào đã được áp dụng.</p></article>
-            </div>
+            </section>
 
-            <div className="flow-preview" role="group" aria-label="Minh họa quy trình">
+            <section className="flow-preview" aria-label="Minh họa quy trình">
               <div className="flow-node done"><b>1</b><span>Chuẩn bị</span></div><i />
               <div className="flow-node active"><b>2</b><span>Kiểm tra</span></div><i />
               <div className="flow-node"><b>3</b><span>Xác nhận</span></div><i />
               <div className="flow-node"><b>4</b><span>Hoàn tất</span></div>
-            </div>
+            </section>
           </section>
 
           <section className="login-panel">
