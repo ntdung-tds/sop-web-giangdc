@@ -221,7 +221,7 @@ export function App() {
                       />
                     </label>
                     {authError ? <p className="demo-note" role="alert">{authError}</p> : null}
-                    {authMessage ? <p className="demo-note" role="status">{authMessage}</p> : null}
+                    {authMessage ? <output className="demo-note">{authMessage}</output> : null}
                     <button className="primary" type="submit" disabled={authBusy}>
                       {authBusy ? "Đang cập nhật…" : "Cập nhật mật khẩu"}
                     </button>
@@ -263,7 +263,7 @@ export function App() {
                       <span className="policy-note">Khôi phục mật khẩu chưa bật</span>
                     </div>
                     {authError ? <p className="demo-note" role="alert">{authError}</p> : null}
-                    {authMessage ? <p className="demo-note" role="status">{authMessage}</p> : null}
+                    {authMessage ? <output className="demo-note">{authMessage}</output> : null}
                     <button className="primary" type="submit" disabled={authBusy || restoring}>
                       {restoring ? "Đang kiểm tra phiên…" : authBusy ? "Đang đăng nhập…" : "Đăng nhập"}
                     </button>
