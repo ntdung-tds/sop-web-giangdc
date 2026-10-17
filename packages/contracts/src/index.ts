@@ -11,3 +11,41 @@ export interface ApiErrorResponse {
     requestId?: string;
   };
 }
+
+export interface AuthLoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface AuthRoleAssignmentResponse {
+  role: "ADMIN" | "PROCESS_OWNER" | "REVIEWER" | "OPERATOR" | "AUDITOR";
+  scopeId: string;
+}
+
+export interface AuthUserResponse {
+  id: string;
+  username: string;
+  displayName: string;
+  roles: AuthRoleAssignmentResponse[];
+}
+
+export interface AuthSessionResponse {
+  authenticated: true;
+  csrfToken: string;
+  expiresAt: number;
+  mustChangePassword: boolean;
+  user: AuthUserResponse;
+}
+
+export interface AuthAnonymousResponse {
+  authenticated: false;
+}
+
+export interface AuthChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface AuthPermissionCheckResponse {
+  allowed: boolean;
+}
