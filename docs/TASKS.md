@@ -14,6 +14,7 @@
 | G0-02D | Web shell | verified | React/Vite build và Pages success |
 | G0-02E | CI | verified | lint + typecheck + unit + build success |
 | G0-02F | Evidence/handoff | verified | PROGRESS/HANDOFF cập nhật, failure/fix được giữ lại |
+| CF-01 | Cloudflare test channel | verified | PR #5; CI `39012157065`; production deployment `0b14fa1f-c483-43c9-8994-f032067cede0`; Browser Rendering desktop/mobile + reorder smoke |
 | G1-01 | Organizational scope | verified | D-004: một OrgUnit gốc + scope tối thiểu; backend enforcement |
 | G1-02 | Common execution data | verified | D-005: execution_no/process-version/scope/assignee/due_at; ExecutionAssignment authoritative |
 | G1-03A | SOD self-approval | verified | D-006: cấm tự phê duyệt ProcessVersion do chính actor soạn/chỉnh |
