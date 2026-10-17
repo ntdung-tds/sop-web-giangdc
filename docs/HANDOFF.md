@@ -1,22 +1,29 @@
 # HANDOFF
 
 ## Trạng thái
-G0-01 đã verified. G0-02 đang thực hiện trên branch `g0/technical-foundation`.
+G0-01 và G0-02 đã verified. Technical foundation đã merge vào `main` qua PR #2.
 
-## Mục tiêu G0-02
-- Monorepo TypeScript.
-- React web shell.
-- Shared contracts/application.
-- Node + Cloudflare API adapters.
-- `/api/v1/health`.
-- CI lint/typecheck/test/build.
-- GitHub Pages deploy từ web app thật.
+## Nền móng hiện có
+- TypeScript monorepo bằng npm workspaces.
+- React/Vite web shell đang deploy trên GitHub Pages.
+- Shared `@sop/contracts` và `@sop/application`.
+- Node API adapter và Cloudflare API adapter cùng dùng application layer.
+- `/api/v1/health` contract.
+- CI bắt buộc: lint, typecheck, unit test, build.
+- ADR-0001 ghi quyết định stack foundation.
 
-## Ràng buộc
-- Không đưa secret/dữ liệu thật lên public repo.
+## Evidence
+- PR #2 merged.
+- CI PR run #39009918837: success.
+- Pages run #39009983993: success.
+- Failure đầu tiên: accessibility lint ở `App.tsx`; đã sửa và ghi lại trong PR comment.
+- Demo: `https://ntdung-tds.github.io/sop-web-giangdc/`.
+
+## Ràng buộc tiếp tục giữ
+- Repo public: không đưa secret/dữ liệu thật lên GitHub.
 - Không triển khai nghiệp vụ OPEN chưa khóa.
 - Runtime adapters không chứa business rules.
-- Chưa thêm D1/Postgres/R2/S3 trước khi có persistence/storage contract tương ứng.
+- D1/Postgres/R2/S3 chỉ thêm sau khi persistence/storage contract tương ứng được chốt.
 
-## Bước tiếp theo
-Chạy CI + Pages trên PR. Nếu xanh: merge, smoke check, cập nhật PROGRESS/HANDOFF và đóng G0-02.
+## Bước tiếp theo — G1 business lock
+Khóa các quyết định chặn nghiệp vụ: organizational scope, common execution data, role/SOD và UAT fixture. Chỉ sau đó mới bắt đầu Process Authoring/Governance theo SRS.
