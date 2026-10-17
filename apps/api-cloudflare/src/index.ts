@@ -1,5 +1,5 @@
 import { buildHealthResponse } from "@sop/application";
-import { handleAuthHttpRequest } from "./authHttp.ts";
+import { handleAuthHttpRequest, type AuthHttpOptions } from "./authHttp.ts";
 import { D1AuthRepository, type D1DatabaseLike } from "./d1AuthRepository.ts";
 
 interface Env {
@@ -26,9 +26,14 @@ export async function handleCloudflareRequest(request: Request, env: Env = {}): 
         { status: 503, headers: { "cache-control": "no-store" } },
       );
     }
-    const authResponse = await handleAuthHttpRequest(request, new D1AuthRepository(env.SOP_DB), {
-      bootstrapToken: env.SOP_BOOTSTRAP_TOKEN,
-    });
+    const authOptions: AuthHttpOptions = env.SOP_BOOTSTRAP_TOKEN
+      ? { bootstrapToken: env.SOP_BOOTSTRAP_TOKEN }
+      : {};
+    const authResponse = await handleAuthHttpRequest(
+      request,
+      new D1AuthRepository(env.SOP_DB),
+      authOptions,
+    );
     if (authResponse) return authResponse;
   }
 
