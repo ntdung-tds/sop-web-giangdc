@@ -1,0 +1,29 @@
+.login-card .demo-note[role="alert"] {
+  display: block;
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 1px solid #efb8b1;
+  border-left: 4px solid #b42318;
+  border-radius: 10px;
+  background: #fff4f2;
+  color: #9f1c13;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.login-card output.demo-note {
+  display: block;
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 1px solid #b9ded2;
+  border-left: 4px solid #277966;
+  border-radius: 10px;
+  background: #eff9f5;
+  color: #245f52;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: left;
+}

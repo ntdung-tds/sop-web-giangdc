@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=browser --format=esm --outfile=../../dist/api-cloudflare/index.js"
+    "build": "esbuild src/index.ts --bundle --platform=browser --format=esm --external:node:crypto --outfile=../../dist/api-cloudflare/index.js"
   },
   "dependencies": {
     "@sop/application": "*"

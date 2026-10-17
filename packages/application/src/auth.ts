@@ -1,3 +1,5 @@
+import { scrypt as nodeScrypt } from "node:crypto";
+
 export type PermissionCode = string;
 export type SystemRoleCode = string;
 
@@ -12,6 +14,7 @@ export interface AuthUserRecord {
   displayName: string;
   passwordHash: string;
   mustChangePassword: boolean;
+  temporaryPasswordExpiresAt?: number | null;
   failedLoginCount: number;
   lockedUntil: number | null;
   roles: RoleAssignment[];
@@ -39,6 +42,8 @@ export interface AuthRepository {
   findUserByUsername(username: string): Promise<AuthUserRecord | null>;
   findUserById(userId: string): Promise<AuthUserRecord | null>;
   saveUser(user: AuthUserRecord): Promise<void>;
+  countUsers(): Promise<number>;
+  saveBootstrapUser(user: AuthUserRecord): Promise<boolean>;
   findSessionByTokenHash(tokenHash: string): Promise<AuthSessionRecord | null>;
   saveSession(session: AuthSessionRecord): Promise<void>;
   revokeSession(sessionId: string, revokedAt: number): Promise<void>;
@@ -57,6 +62,7 @@ export interface AuthPolicy {
   sourceRateWindowMs?: number;
   sourceBlockDurationMs?: number;
   minimumPasswordLength?: number;
+  temporaryPasswordTtlMs?: number;
 }
 
 interface ResolvedAuthPolicy {
@@ -68,17 +74,20 @@ interface ResolvedAuthPolicy {
   sourceRateWindowMs: number;
   sourceBlockDurationMs: number;
   minimumPasswordLength: number;
+  temporaryPasswordTtlMs: number;
 }
 
 export const AUTH_POLICY_DEFAULTS: AuthPolicy = {
   lockoutThreshold: 5,
   lockoutDurationMs: 15 * 60_000,
   sessionTtlMs: 8 * 60 * 60_000,
+  // Retained for legacy PBKDF2 hash compatibility; new hashes use scrypt.
   pbkdf2Iterations: 600_000,
   sourceRateLimitThreshold: 20,
   sourceRateWindowMs: 15 * 60_000,
   sourceBlockDurationMs: 15 * 60_000,
   minimumPasswordLength: 12,
+  temporaryPasswordTtlMs: 48 * 60 * 60_000,
 };
 
 export interface PublicAuthUser {
@@ -101,6 +110,16 @@ export interface LoginInput {
   password: string;
   source: string;
 }
+
+export interface BootstrapFirstUserInput {
+  username: string;
+  displayName: string;
+  initialPassword: string;
+}
+
+export type BootstrapFirstUserResult =
+  | { ok: true; userId: string }
+  | { ok: false; code: "BOOTSTRAP_UNAVAILABLE" | "PASSWORD_POLICY" | "INVALID_INPUT" };
 
 export interface AuthFailure {
   code: "INVALID_CREDENTIALS" | "INVALID_SESSION" | "PASSWORD_POLICY";
@@ -134,6 +153,13 @@ const INVALID_SESSION: AuthFailure = {
   message: "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.",
 };
 
+const SCRYPT_N = 32_768;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_KEY_LENGTH = 32;
+const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
+const CLOUDFLARE_PBKDF2_MAX_ITERATIONS = 100_000;
+
 function resolvePolicy(policy: AuthPolicy): ResolvedAuthPolicy {
   return {
     lockoutThreshold: policy.lockoutThreshold,
@@ -148,6 +174,8 @@ function resolvePolicy(policy: AuthPolicy): ResolvedAuthPolicy {
       policy.sourceBlockDurationMs ?? AUTH_POLICY_DEFAULTS.sourceBlockDurationMs ?? 15 * 60_000,
     minimumPasswordLength:
       policy.minimumPasswordLength ?? AUTH_POLICY_DEFAULTS.minimumPasswordLength ?? 12,
+    temporaryPasswordTtlMs:
+      policy.temporaryPasswordTtlMs ?? AUTH_POLICY_DEFAULTS.temporaryPasswordTtlMs ?? 48 * 60 * 60_000,
   };
 }
 
@@ -161,13 +189,24 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
+function base64ToBytes(value: string): Uint8Array | null {
+  const standard = value.replaceAll("-", "+").replaceAll("_", "/");
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(standard)) return null;
+  const unpadded = standard.replace(/=+$/, "");
+  const remainder = unpadded.length % 4;
+  if (remainder === 1) return null;
+  const padded = `${unpadded}${"=".repeat((4 - remainder) % 4)}`;
+
+  try {
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  } catch {
+    return null;
   }
-  return bytes;
 }
 
 function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -205,22 +244,100 @@ async function pbkdf2(
   return new Uint8Array(bits);
 }
 
+function scrypt(
+  password: string,
+  salt: Uint8Array,
+  n = SCRYPT_N,
+  r = SCRYPT_R,
+  p = SCRYPT_P,
+): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    nodeScrypt(
+      password,
+      salt,
+      SCRYPT_KEY_LENGTH,
+      { N: n, r, p, maxmem: SCRYPT_MAX_MEMORY },
+      (error, derivedKey) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(new Uint8Array(derivedKey));
+      },
+    );
+  });
+}
+
+function isValidScryptCost(n: number, r: number, p: number): boolean {
+  return (
+    Number.isSafeInteger(n) &&
+    n >= 16_384 &&
+    n <= 65_536 &&
+    (n & (n - 1)) === 0 &&
+    Number.isSafeInteger(r) &&
+    r >= 1 &&
+    r <= 16 &&
+    Number.isSafeInteger(p) &&
+    p >= 1 &&
+    p <= 4
+  );
+}
+
 export async function createPasswordHash(
   password: string,
-  iterations = AUTH_POLICY_DEFAULTS.pbkdf2Iterations,
+  _legacyIterations = AUTH_POLICY_DEFAULTS.pbkdf2Iterations,
 ): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const digest = await pbkdf2(password, salt, iterations);
-  return `pbkdf2-sha256$${iterations}$${bytesToBase64(salt)}$${bytesToBase64(digest)}`;
+  const digest = await scrypt(password, salt);
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${bytesToBase64(salt)}$${bytesToBase64(digest)}`;
 }
 
 export async function verifyPassword(password: string, encoded: string): Promise<boolean> {
-  const [algorithm, iterationsRaw, saltRaw, digestRaw] = encoded.split("$");
-  if (algorithm !== "pbkdf2-sha256" || !iterationsRaw || !saltRaw || !digestRaw) return false;
+  const parts = encoded.split("$");
+  const algorithm = parts[0];
+
+  if (algorithm === "scrypt") {
+    if (parts.length !== 6) return false;
+    const [, nRaw, rRaw, pRaw, saltRaw, digestRaw] = parts;
+    if (!nRaw || !rRaw || !pRaw || !saltRaw || !digestRaw) return false;
+    const n = Number(nRaw);
+    const r = Number(rRaw);
+    const p = Number(pRaw);
+    if (!isValidScryptCost(n, r, p)) return false;
+    const salt = base64ToBytes(saltRaw);
+    const expected = base64ToBytes(digestRaw);
+    if (!salt || !expected || expected.length !== SCRYPT_KEY_LENGTH) return false;
+
+    try {
+      const actual = await scrypt(password, salt, n, r, p);
+      return constantTimeEqual(actual, expected);
+    } catch {
+      return false;
+    }
+  }
+
+  if (algorithm !== "pbkdf2-sha256" || parts.length !== 4) return false;
+  const [, iterationsRaw, saltRaw, digestRaw] = parts;
+  if (!iterationsRaw || !saltRaw || !digestRaw) return false;
   const iterations = Number(iterationsRaw);
-  if (!Number.isSafeInteger(iterations) || iterations <= 0) return false;
-  const actual = await pbkdf2(password, base64ToBytes(saltRaw), iterations);
-  return constantTimeEqual(actual, base64ToBytes(digestRaw));
+  if (
+    !Number.isSafeInteger(iterations) ||
+    iterations <= 0 ||
+    iterations > CLOUDFLARE_PBKDF2_MAX_ITERATIONS
+  ) {
+    return false;
+  }
+
+  const salt = base64ToBytes(saltRaw);
+  const expected = base64ToBytes(digestRaw);
+  if (!salt || !expected) return false;
+
+  try {
+    const actual = await pbkdf2(password, salt, iterations);
+    return constantTimeEqual(actual, expected);
+  } catch {
+    return false;
+  }
 }
 
 async function sha256Base64(value: string): Promise<string> {
@@ -265,6 +382,18 @@ export class InMemoryAuthRepository implements AuthRepository {
 
   async saveUser(user: AuthUserRecord): Promise<void> {
     this.users.set(user.id, structuredClone(user));
+  }
+
+  async countUsers(): Promise<number> {
+    return this.users.size;
+  }
+
+  async saveBootstrapUser(user: AuthUserRecord): Promise<boolean> {
+    if (this.users.size !== 0) return false;
+    const duplicate = await this.findUserByUsername(user.username);
+    if (duplicate) return false;
+    this.users.set(user.id, structuredClone(user));
+    return true;
   }
 
   async findSessionByTokenHash(tokenHash: string): Promise<AuthSessionRecord | null> {
@@ -330,6 +459,40 @@ export class AuthService {
       dependencies.randomBytes ?? ((length) => crypto.getRandomValues(new Uint8Array(length)));
   }
 
+  async bootstrapFirstUser(input: BootstrapFirstUserInput): Promise<BootstrapFirstUserResult> {
+    const username = input.username.trim();
+    const displayName = input.displayName.trim();
+    if (username.length < 3 || username.length > 128 || displayName.length < 1 || displayName.length > 200) {
+      return { ok: false, code: "INVALID_INPUT" };
+    }
+    if (input.initialPassword.length < this.policy.minimumPasswordLength) {
+      return { ok: false, code: "PASSWORD_POLICY" };
+    }
+    if ((await this.repository.countUsers()) !== 0) {
+      return { ok: false, code: "BOOTSTRAP_UNAVAILABLE" };
+    }
+
+    const userId = `usr_${randomToken(this.randomBytes, 18)}`;
+    const passwordHash = await createPasswordHash(
+      input.initialPassword,
+      this.policy.pbkdf2Iterations,
+    );
+    const now = this.now();
+    const created = await this.repository.saveBootstrapUser({
+      id: userId,
+      username,
+      displayName,
+      passwordHash,
+      mustChangePassword: true,
+      temporaryPasswordExpiresAt: now + this.policy.temporaryPasswordTtlMs,
+      failedLoginCount: 0,
+      lockedUntil: null,
+      roles: [],
+      active: true,
+    });
+    return created ? { ok: true, userId } : { ok: false, code: "BOOTSTRAP_UNAVAILABLE" };
+  }
+
   async login(input: LoginInput): Promise<LoginResult> {
     const now = this.now();
     if (await this.isSourceBlocked(input.source, now)) {
@@ -358,6 +521,15 @@ export class AuthService {
         failedLoginCount: shouldLock ? 0 : nextFailureCount,
         lockedUntil: shouldLock ? now + this.policy.lockoutDurationMs : null,
       });
+      await this.recordSourceFailure(input.source, now);
+      return { ok: false, error: INVALID_CREDENTIALS };
+    }
+
+    const temporaryPasswordExpired =
+      user.mustChangePassword &&
+      typeof user.temporaryPasswordExpiresAt === "number" &&
+      user.temporaryPasswordExpiresAt <= now;
+    if (temporaryPasswordExpired) {
       await this.recordSourceFailure(input.source, now);
       return { ok: false, error: INVALID_CREDENTIALS };
     }
@@ -420,6 +592,7 @@ export class AuthService {
       ...resolved.user,
       passwordHash,
       mustChangePassword: false,
+      temporaryPasswordExpiresAt: null,
       failedLoginCount: 0,
       lockedUntil: null,
     });
@@ -516,6 +689,6 @@ export class AuthService {
 
   private async consumeDummyPasswordWork(password: string): Promise<void> {
     const salt = new Uint8Array(16);
-    await pbkdf2(password, salt, this.policy.pbkdf2Iterations);
+    await scrypt(password, salt);
   }
 }

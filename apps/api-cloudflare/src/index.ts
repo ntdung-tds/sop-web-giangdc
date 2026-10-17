@@ -1,9 +1,11 @@
 import { buildHealthResponse } from "@sop/application";
-import { handleAuthHttpRequest } from "./authHttp.ts";
+import { handleAuthHttpRequest, type AuthHttpOptions } from "./authHttp.ts";
 import { D1AuthRepository, type D1DatabaseLike } from "./d1AuthRepository.ts";
 
 interface Env {
   SOP_DB?: D1DatabaseLike;
+  SOP_BOOTSTRAP_TOKEN?: string;
+  SOP_PREVIEW_LEGACY_BRIDGE?: string;
 }
 
 export async function handleCloudflareRequest(request: Request, env: Env = {}): Promise<Response> {
@@ -25,7 +27,15 @@ export async function handleCloudflareRequest(request: Request, env: Env = {}): 
         { status: 503, headers: { "cache-control": "no-store" } },
       );
     }
-    const authResponse = await handleAuthHttpRequest(request, new D1AuthRepository(env.SOP_DB));
+    const authOptions: AuthHttpOptions = {
+      ...(env.SOP_BOOTSTRAP_TOKEN ? { bootstrapToken: env.SOP_BOOTSTRAP_TOKEN } : {}),
+      legacyBridgeEnabled: env.SOP_PREVIEW_LEGACY_BRIDGE === "1",
+    };
+    const authResponse = await handleAuthHttpRequest(
+      request,
+      new D1AuthRepository(env.SOP_DB),
+      authOptions,
+    );
     if (authResponse) return authResponse;
   }
 

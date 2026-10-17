@@ -1,82 +1,102 @@
 # HANDOFF
 
 ## Baseline hiện tại
+- Repo: `ntdung-tds/sop-web-giangdc`.
 - UI canonical: G0-01 landing + `Đăng nhập nội bộ` + dashboard SAMPLE đã được owner xác nhận.
-- Web shell đã migrate sang React/Vite và G0-03 giữ nguyên visual language của baseline này.
-- Cloudflare project: `sopweb-giangdc-stagesign`.
+- Stable production branch: `stagesign`.
 - Stable production URL: `https://sopweb-giangdc-stagesign.pages.dev/`.
-- Production branch: `stagesign`.
+- Stable production intentionally remains on the pre-auth reviewer baseline until G0-03 credential takeover is complete.
 - Không dùng `main` hoặc `giangdc-sop-demo` để triển khai task StageSign.
 
-## G0-02A — VERIFIED
-- PR #10 merged vào `stagesign`, merge commit `523f0b9b5743a6923184c60905fff6ccd4cca9bb`.
-- RED CI `39018871211`; GREEN CI trước/sau merge `39019111644` / `39019154024`.
-- Cloudflare production + browser smoke pass; UI G0-01 không đổi.
-
-## G0-02B — VERIFIED
-- PR #11 squash-merged vào `stagesign`, merge commit `5e6a2ba169ac6f958a6f45b75a37bc05980b00c2`.
-- Test-first RED: CI `39019731870` fail đúng vì `uiState.ts` chưa tồn tại.
-- CSS canonical: `site/styles.css` và `apps/web/src/styles.css` cùng baseline đã owner duyệt.
-- Post-merge CI `39020899697` success.
-- Stable production hiện vẫn ở G0-02B/G0-02B documentation baseline để reviewer không bị khóa ngoài trong lúc G0-03 chưa có account được provision.
+## G0-02A / G0-02B — VERIFIED
+- Technical foundation and React/Vite baseline migration đã verified/production-stable.
+- G0-01 visual baseline remains frozen.
 
 ## G0-03 — PREVIEW-VERIFIED, CHƯA PROMOTE PRODUCTION
-Branch: `stagesign-g0-03-auth-foundation`
-PR: #13 (giữ chưa merge)
+Parent branch: `stagesign-g0-03-auth-foundation`
+PR: #13 (draft/open)
 
 ### Đã triển khai
-- Auth nội bộ username/password thật qua backend same-origin.
-- PBKDF2-HMAC-SHA-256 bằng WebCrypto, salt ngẫu nhiên; không lưu plaintext password.
-- Opaque server session; DB chỉ lưu hash token.
-- Cookie `__Host-sop_session` với `HttpOnly`, `Secure`, `SameSite=Lax`.
-- Synchronizer CSRF token cho auth mutation.
-- Generic credential error; account lockout; source throttle.
-- Mandatory first-password change; đổi thành công revoke mọi session và buộc đăng nhập lại.
-- Expired/revoked session bị từ chối.
-- Authorization engine chạy backend theo system-role grant + `scopeId` + persisted role-permission catalog.
-- Session còn `must_change_password` không có business permission.
-- Login/dashboard UI nối vào auth thật nhưng giữ visual language đã chốt; dashboard vẫn ghi SAMPLE DATA.
-- Không triển khai Process Authoring.
+- Internal username/password auth thật qua backend same-origin.
+- PBKDF2-HMAC-SHA-256 với salt ngẫu nhiên; không lưu plaintext password.
+- Opaque server session; DB chỉ lưu token hash.
+- `__Host-sop_session`: HttpOnly + Secure + SameSite=Lax.
+- Synchronizer CSRF cho state-changing auth actions.
+- Generic login failure; account lockout; source throttle.
+- Mandatory first-password change; password change revokes all sessions.
+- Backend authorization theo system-role grant + scope + persisted permission catalog.
+- Không seed permission production; không lẫn system role với BusinessRole/assignment.
+- Process Authoring chưa được triển khai trong G0-03.
 
-### Guardrail permission theo SRS
-- G0-03 không hard-code matrix permission production.
-- Không seed role production hoặc mapping role-permission production.
-- `fixture.*` chỉ nằm trong tests.
-- System-role grant trong Identity & Access không được coi là BusinessRole/actual execution assignment.
-- Catalog production phải được contract owner khóa trước G2 theo SRS.
+## G0-03F — PREVIEW PROVISIONED, AWAITING OWNER TAKEOVER
+Child branch: `stagesign-g0-03f-secure-bootstrap`
+PR: #14
 
-### Evidence
-- RED auth CI: `39023986131`.
-- Final G0-03 CI trên commit `820979ac5ff5dd92dca0d659de8f7bebeb7e70d5`: `39025297057` success.
-- Test result: 4 files, 16/16 tests pass.
-- Preview deployment: `0bab18ea-521e-41c2-893d-2d36402e400d`, build + deploy success, Pages Functions enabled.
-- Preview D1: `af796076-60a4-4520-8698-0cc2927c8237`.
-- Production D1: `87302ca0-e352-4344-aafe-f143805cbe85`.
-- Migrations `0001_auth_foundation.sql` + `0002_auth_permission_catalog.sql` đã áp dụng cả hai.
-- Direct DB verification sau migration: users=0, roles=0, role_permissions=0 ở cả preview và production.
-- Evidence chi tiết: `docs/traceability/G0-03-authentication-foundation.md`.
+### Code/security gate
+- Initial RED CI: `39026007765` — bootstrap contracts chưa tồn tại.
+- First GREEN: `39026201868`.
+- Security review phát hiện bootstrap method disclosure (`GET` trả 405 trước secret validation).
+- Security RED: `39026516082` — đúng 1 failure `expected 404, received 405`.
+- Fix commit: `f83663193cfb829ca76e9875ca07a5ccc25f2746`.
+- Final GREEN CI: `39026592467` — lint/typecheck/unit/build success, 22/22 tests pass.
 
-### Giới hạn kiểm thử hiện tại
-Môi trường công cụ review không resolve được hostname Cloudflare preview cho external live GET/POST; việc này được ghi là tool/network limitation và không tính là pass. Route behavior đã có HTTP-handler tests trong CI; Cloudflare xác nhận deploy Functions thành công và đúng D1 binding.
+### Secure bootstrap behavior
+- Bootstrap first user only when repository has zero users.
+- Password is hashed before persistence.
+- New bootstrap identity has `must_change_password=1`, `roles=[]`, active=true.
+- D1 migration `0003_secure_bootstrap.sql` adds a one-bootstrap-origin guard.
+- Bootstrap token is header-only; URL query token is rejected.
+- Missing/wrong secret and replay are concealed as 404.
+- No password is returned and no login session is created by bootstrap.
 
-## Technical foundation hiện có
-- TypeScript workspace root.
-- `packages/contracts` + `packages/application`.
-- Thin adapters `apps/api-node` + `apps/api-cloudflare`.
-- Shared health route contract `/api/v1/health`.
-- StageSign CI: lint/typecheck/unit/build.
-- React/Vite web shell giữ visual language G0-01.
-- D1 authentication adapter + auth Pages Functions.
-- Separate preview/production auth D1 bindings.
+### Cloudflare secret handling
+- Attempt to write `SOP_BOOTSTRAP_TOKEN` as Cloudflare encrypted `secret_text` was blocked by connector safety policy.
+- Implementation did not downgrade to a plaintext env var.
+- Verified preview and production env var maps remained empty after the blocked attempt.
+- For StageSign preview only, first identity was provisioned directly in D1 using a PBKDF2 hash generated locally; plaintext was not written to GitHub, Pages config or D1.
+
+### Preview state
+Preview D1:
+- name: `sopweb-giangdc-stagesign-auth-preview`
+- id: `af796076-60a4-4520-8698-0cc2927c8237`
+- migration `0003` applied.
+- exactly one user: `stage.reviewer` / `StageSign Reviewer`.
+- `must_change_password=1`.
+- `roles_json=[]`.
+- `bootstrap_origin=1`.
+- PBKDF2-SHA256 hash format with 600,000 iterations verified.
+
+Preview URL:
+`https://stagesign-g0-03f-secure-boot.sopweb-giangdc-stagesign.pages.dev/`
+
+Final preview deployment:
+- `d0efd6de-365d-4d96-a0f2-6b8a3506ec07`
+- commit `f83663193cfb829ca76e9875ca07a5ccc25f2746`
+- deploy success; Pages Functions enabled; preview D1 binding correct.
+
+Live Cloudflare Browser Run checks:
+- landing/login: 200, real-auth UI rendered.
+- `/api/v1/auth/session`: 200 + `{"authenticated":false}` + `Cache-Control: no-store`.
+- `/api/v1/auth/bootstrap` before fix: 405 (issue reproduced).
+- `/api/v1/auth/bootstrap` after fix: 404 (issue closed).
+
+### Production isolation
+Production D1 remains:
+- users=0;
+- roles=0;
+- role_permissions=0.
+
+Migration `0003_secure_bootstrap.sql` has NOT been applied to production in G0-03F. No production account was provisioned.
 
 ## Không được suy diễn
-- Không gọi G0-03 là production-promoted khi PR #13 chưa merge.
-- Không tự tạo tài khoản/mật khẩu production hoặc gửi secret vào source control.
-- Không tự chốt permission catalog production trước gate SRS.
-- Không lẫn system authorization role với BusinessRole/assignment nghiệp vụ.
-- Password recovery vẫn tắt trong khi `OPEN-AUTH-POLICY-01` chưa chốt.
-- MFA/SSO không thuộc MVP G0-03.
-- Không đưa Process Authoring vào task này.
+- Không gọi G0-03/G0-03F là production-promoted.
+- Không ghi temporary password vào source/docs.
+- Không tự tạo production permission catalog.
+- Không merge/promote chỉ để deploy khi credential chưa được owner takeover.
+- Password recovery/MFA/SSO remain outside this gate.
+- Không bắt đầu Process Authoring từ branch này.
 
-## Bước tiếp theo an toàn
-Hoàn tất secure account provisioning/credential ownership cho StageSign và chốt tối thiểu system role grant cần để reviewer đăng nhập. Sau đó mới chạy authenticated live smoke, merge PR #13 và promote `stagesign` production. Không merge chỉ để ép deploy khi chưa có account hợp lệ.
+## Bước tiếp theo bắt buộc
+Owner đăng nhập preview bằng credential tạm được handoff ngoài repository, đổi mật khẩu ngay qua force-change UI và xác nhận thành công. Sau đó chạy authenticated smoke, retarget/merge PR #14 vào parent auth branch, merge PR #13 vào `stagesign`, và chỉ khi post-merge checks xanh mới promote stable production.
+
+Detailed evidence: `docs/traceability/G0-03F-secure-bootstrap.md`.
