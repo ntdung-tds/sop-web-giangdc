@@ -5,6 +5,7 @@ interface PagesContext {
   request: Request;
   env: {
     SOP_DB?: D1DatabaseLike;
+    SOP_BOOTSTRAP_TOKEN?: string;
   };
 }
 
