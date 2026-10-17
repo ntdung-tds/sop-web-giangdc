@@ -19,7 +19,9 @@
 | G1-03A | SOD self-approval | verified | D-006: cấm tự phê duyệt ProcessVersion do chính actor soạn/chỉnh |
 | G1-03B | Severity approval mapping | pending | Owner phải khóa `severity -> required_approval_level`; fallback chỉ cho prototype |
 | G1-04 | UAT fixture source content | verified | D-007: 11 bước “Xuất hàng đến đại lý” được duyệt làm SAMPLE source-only |
-| PA-01 | Process Authoring core | pending | PRC-001..005 + PRC-009, AC-01; contract/domain/test/UI SAMPLE; không phụ thuộc severity |
-| PA-02 | Versioning + Governance | pending | AC-02 + GOV-001..007; chỉ làm phần không phụ thuộc SOD chưa khóa |
+| PA-01 | Process Authoring core | verified | PR #4; AC-01, PRC-001/003/004/005 core, BR-001 app invariant, PRC-009 core subset, PRC-010 preview; CI `39011213520`, Pages `39011262184` |
+| PA-01B | Process catalog/search | pending | PRC-002: search code/name; filter group/owner/status/unit; test/application/UI evidence |
+| PA-01C | Requirements + policy authoring | pending | PRC-006..008 và full PRC-009; không invent form/document/evidence policy |
+| PA-02 | Versioning + Governance | pending | AC-02 + GOV-001..007; self-approval rule phải được enforce; phần severity vẫn không suy diễn |
 
-`OPEN-SAMPLE-01` vẫn là việc của G3 cho vai trò/giấy tờ/evidence chính thức; không trộn với việc duyệt chuỗi 11 bước nguồn ở G1.
+`OPEN-SAMPLE-01` vẫn là việc của G3 cho vai trò/giấy tờ/evidence chính thức. PA-01 chỉ dùng fixture source-only và không coi các trường chưa chốt là requirement production.
