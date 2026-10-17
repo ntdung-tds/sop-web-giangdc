@@ -3,7 +3,9 @@ import type {
   AuthSessionRecord,
   AuthUserRecord,
   LoginSourceState,
+  PermissionCode,
   RoleAssignment,
+  SystemRoleCode,
 } from "@sop/application";
 
 export interface D1PreparedStatementLike {
@@ -45,6 +47,10 @@ interface SourceRow {
   blocked_until: number | null;
 }
 
+interface PermissionRow {
+  allowed: number;
+}
+
 function normalizeUsername(username: string): string {
   return username.trim().toLocaleLowerCase("en-US");
 }
@@ -55,16 +61,12 @@ function parseRoles(value: string): RoleAssignment[] {
     if (!Array.isArray(parsed)) return [];
     return parsed.flatMap((candidate): RoleAssignment[] => {
       if (!candidate || typeof candidate !== "object") return [];
-      const role = Reflect.get(candidate, "role");
+      const roleCode = Reflect.get(candidate, "roleCode");
       const scopeId = Reflect.get(candidate, "scopeId");
-      const validRole =
-        role === "ADMIN" ||
-        role === "PROCESS_OWNER" ||
-        role === "REVIEWER" ||
-        role === "OPERATOR" ||
-        role === "AUDITOR";
-      if (!validRole || typeof scopeId !== "string") return [];
-      return [{ role, scopeId }];
+      if (typeof roleCode !== "string" || !roleCode || typeof scopeId !== "string" || !scopeId) {
+        return [];
+      }
+      return [{ roleCode, scopeId }];
     });
   } catch {
     return [];
@@ -254,5 +256,21 @@ export class D1AuthRepository implements AuthRepository {
       )
       .bind(state.source, state.windowStartedAt, state.failureCount, state.blockedUntil)
       .run();
+  }
+
+  async roleHasPermission(
+    roleCode: SystemRoleCode,
+    permissionCode: PermissionCode,
+  ): Promise<boolean> {
+    const row = await this.db
+      .prepare(
+        `SELECT 1 AS allowed
+           FROM auth_role_permissions
+          WHERE role_code = ?1 AND permission_code = ?2
+          LIMIT 1`,
+      )
+      .bind(roleCode, permissionCode)
+      .first<PermissionRow>();
+    return row?.allowed === 1;
   }
 }
