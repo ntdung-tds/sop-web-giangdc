@@ -2,9 +2,9 @@
 
 ## Baseline hiện tại
 - UI canonical: G0-01 landing + `Đăng nhập nội bộ` + dashboard SAMPLE đã được owner xác nhận.
-- Web shell hiện đã migrate sang React/Vite nhưng giữ nguyên visual baseline.
+- Web shell đã migrate sang React/Vite và G0-03 giữ nguyên visual language của baseline này.
 - Cloudflare project: `sopweb-giangdc-stagesign`.
-- Production URL: `https://sopweb-giangdc-stagesign.pages.dev/`.
+- Stable production URL: `https://sopweb-giangdc-stagesign.pages.dev/`.
 - Production branch: `stagesign`.
 - Không dùng `main` hoặc `giangdc-sop-demo` để triển khai task StageSign.
 
@@ -16,32 +16,67 @@
 ## G0-02B — VERIFIED
 - PR #11 squash-merged vào `stagesign`, merge commit `5e6a2ba169ac6f958a6f45b75a37bc05980b00c2`.
 - Test-first RED: CI `39019731870` fail đúng vì `uiState.ts` chưa tồn tại.
-- Known failed attempts đã được xử lý và giữ làm evidence:
-  - `39019880458`: lint React/a11y.
-  - `39019959937`: semantic lint.
-  - `39020035137`: typecheck do Vite/plugin duplicate.
-  - Preview React đầu phát hiện migration Service Worker có nguy cơ reload-loop; sửa ở `978efd735570ca53bc900e93ca73411b79a251de` bằng cách không đăng ký migration worker trên client mới.
-- CSS canonical: `site/styles.css` và `apps/web/src/styles.css` cùng blob SHA `b57434334cd5cfe9530cecab348fbcd5fd563834`.
-- Final pre-merge CI `39020854958`: success lint/typecheck/unit/build.
-- Post-merge CI `39020899697`: completed success trên `stagesign`.
-- Production React deployment: `e8a73da3-dea2-442d-b399-c9bb2164e090`, build + deploy success từ đúng merge SHA.
-- Stable production desktop 1440: `landing-shell`, `brand-panel`, `login-panel`, `login-card`, `hero-copy` đều có x/y/w/h khớp chính xác baseline static; hero/login/welcome đúng; hashed `/assets/index-*.js` có mặt; `Process Authoring` không có.
-- Stable production mobile 360: cùng 5/5 layout metrics khớp chính xác baseline; mobile submit login prototype → dashboard pass.
-- Login hiện vẫn là SAMPLE prototype, không phải authentication thật.
+- CSS canonical: `site/styles.css` và `apps/web/src/styles.css` cùng baseline đã owner duyệt.
+- Post-merge CI `39020899697` success.
+- Stable production hiện vẫn ở G0-02B/G0-02B documentation baseline để reviewer không bị khóa ngoài trong lúc G0-03 chưa có account được provision.
 
-## Technical foundation đã có
+## G0-03 — PREVIEW-VERIFIED, CHƯA PROMOTE PRODUCTION
+Branch: `stagesign-g0-03-auth-foundation`
+PR: #13 (giữ chưa merge)
+
+### Đã triển khai
+- Auth nội bộ username/password thật qua backend same-origin.
+- PBKDF2-HMAC-SHA-256 bằng WebCrypto, salt ngẫu nhiên; không lưu plaintext password.
+- Opaque server session; DB chỉ lưu hash token.
+- Cookie `__Host-sop_session` với `HttpOnly`, `Secure`, `SameSite=Lax`.
+- Synchronizer CSRF token cho auth mutation.
+- Generic credential error; account lockout; source throttle.
+- Mandatory first-password change; đổi thành công revoke mọi session và buộc đăng nhập lại.
+- Expired/revoked session bị từ chối.
+- Authorization engine chạy backend theo system-role grant + `scopeId` + persisted role-permission catalog.
+- Session còn `must_change_password` không có business permission.
+- Login/dashboard UI nối vào auth thật nhưng giữ visual language đã chốt; dashboard vẫn ghi SAMPLE DATA.
+- Không triển khai Process Authoring.
+
+### Guardrail permission theo SRS
+- G0-03 không hard-code matrix permission production.
+- Không seed role production hoặc mapping role-permission production.
+- `fixture.*` chỉ nằm trong tests.
+- System-role grant trong Identity & Access không được coi là BusinessRole/actual execution assignment.
+- Catalog production phải được contract owner khóa trước G2 theo SRS.
+
+### Evidence
+- RED auth CI: `39023986131`.
+- Final G0-03 CI trên commit `820979ac5ff5dd92dca0d659de8f7bebeb7e70d5`: `39025297057` success.
+- Test result: 4 files, 16/16 tests pass.
+- Preview deployment: `0bab18ea-521e-41c2-893d-2d36402e400d`, build + deploy success, Pages Functions enabled.
+- Preview D1: `af796076-60a4-4520-8698-0cc2927c8237`.
+- Production D1: `87302ca0-e352-4344-aafe-f143805cbe85`.
+- Migrations `0001_auth_foundation.sql` + `0002_auth_permission_catalog.sql` đã áp dụng cả hai.
+- Direct DB verification sau migration: users=0, roles=0, role_permissions=0 ở cả preview và production.
+- Evidence chi tiết: `docs/traceability/G0-03-authentication-foundation.md`.
+
+### Giới hạn kiểm thử hiện tại
+Môi trường công cụ review không resolve được hostname Cloudflare preview cho external live GET/POST; việc này được ghi là tool/network limitation và không tính là pass. Route behavior đã có HTTP-handler tests trong CI; Cloudflare xác nhận deploy Functions thành công và đúng D1 binding.
+
+## Technical foundation hiện có
 - TypeScript workspace root.
 - `packages/contracts` + `packages/application`.
 - Thin adapters `apps/api-node` + `apps/api-cloudflare`.
 - Shared health route contract `/api/v1/health`.
 - StageSign CI: lint/typecheck/unit/build.
-- React/Vite web shell giữ nguyên visual baseline G0-01.
+- React/Vite web shell giữ visual language G0-01.
+- D1 authentication adapter + auth Pages Functions.
+- Separate preview/production auth D1 bindings.
 
 ## Không được suy diễn
-- Auth thật, permission, D1/R2/Postgres/S3 chưa được triển khai.
-- Không gọi prototype login là auth production.
-- Không đưa Process Authoring cũ trở lại baseline nếu owner chưa quyết định.
-- Task tiếp theo phải là task riêng, branch `stagesign-<task>`, có acceptance/evidence riêng trước khi code/merge.
+- Không gọi G0-03 là production-promoted khi PR #13 chưa merge.
+- Không tự tạo tài khoản/mật khẩu production hoặc gửi secret vào source control.
+- Không tự chốt permission catalog production trước gate SRS.
+- Không lẫn system authorization role với BusinessRole/assignment nghiệp vụ.
+- Password recovery vẫn tắt trong khi `OPEN-AUTH-POLICY-01` chưa chốt.
+- MFA/SSO không thuộc MVP G0-03.
+- Không đưa Process Authoring vào task này.
 
-## Bước tiếp theo
-Chờ owner duyệt task tiếp theo. Không tự mở rộng G0-02B sau khi đã verified.
+## Bước tiếp theo an toàn
+Hoàn tất secure account provisioning/credential ownership cho StageSign và chốt tối thiểu system role grant cần để reviewer đăng nhập. Sau đó mới chạy authenticated live smoke, merge PR #13 và promote `stagesign` production. Không merge chỉ để ép deploy khi chưa có account hợp lệ.

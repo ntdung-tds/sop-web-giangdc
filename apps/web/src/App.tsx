@@ -1,5 +1,13 @@
 import type { FormEvent } from "react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import {
+  AuthApiError,
+  changePassword,
+  type AuthSession,
+  login,
+  logout as logoutSession,
+  restoreSession,
+} from "./authClient.ts";
 import {
   initialUiState,
   showDashboard,
@@ -8,24 +16,131 @@ import {
   UI_BASELINE_COPY,
 } from "./uiState.ts";
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const selected = parts.slice(-2);
+  const result = selected.map((part) => part[0]?.toLocaleUpperCase("vi-VN") ?? "").join("");
+  return result || "ND";
+}
+
 export function App() {
   const [ui, setUi] = useState(initialUiState);
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [restoring, setRestoring] = useState(true);
+  const [authError, setAuthError] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
   const heroTitleId = useId();
 
-  const submitLogin = (event: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    let active = true;
+    void restoreSession()
+      .then((restored) => {
+        if (!active || !restored) return;
+        setSession(restored);
+        if (!restored.mustChangePassword) {
+          setUi((state) => showDashboard(state));
+        }
+      })
+      .finally(() => {
+        if (active) setRestoring(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setUi((state) => showDashboard(state));
-    window.scrollTo({ top: 0, behavior: "instant" });
+    setAuthError("");
+    setAuthMessage("");
+    setAuthBusy(true);
+    const data = new FormData(event.currentTarget);
+    try {
+      const authenticated = await login(
+        String(data.get("username") ?? ""),
+        String(data.get("password") ?? ""),
+      );
+      setSession(authenticated);
+      if (authenticated.mustChangePassword) {
+        setUi((state) => showLanding(state));
+        setAuthMessage("Tài khoản cần đổi mật khẩu trước khi vào khu vực làm việc.");
+      } else {
+        setUi((state) => showDashboard(state));
+        window.scrollTo({ top: 0, behavior: "instant" });
+      }
+    } catch (error) {
+      setSession(null);
+      setUi((state) => showLanding(state));
+      setAuthError(
+        error instanceof AuthApiError
+          ? error.message
+          : "Không thể đăng nhập. Vui lòng thử lại.",
+      );
+    } finally {
+      setAuthBusy(false);
+    }
   };
 
-  const logout = () => {
-    setUi((state) => showLanding(state));
-    window.scrollTo({ top: 0, behavior: "instant" });
+  const submitPasswordChange = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!session) return;
+    setAuthError("");
+    setAuthMessage("");
+    const data = new FormData(event.currentTarget);
+    const currentPassword = String(data.get("currentPassword") ?? "");
+    const newPassword = String(data.get("newPassword") ?? "");
+    const confirmPassword = String(data.get("confirmPassword") ?? "");
+    if (newPassword !== confirmPassword) {
+      setAuthError("Mật khẩu mới và xác nhận mật khẩu chưa khớp.");
+      return;
+    }
+
+    setAuthBusy(true);
+    try {
+      await changePassword(session.csrfToken, currentPassword, newPassword);
+      setSession(null);
+      setUi((state) => showLanding(state));
+      setAuthMessage("Mật khẩu đã được cập nhật. Vui lòng đăng nhập lại.");
+      window.scrollTo({ top: 0, behavior: "instant" });
+    } catch (error) {
+      setAuthError(
+        error instanceof AuthApiError
+          ? error.message
+          : "Không thể đổi mật khẩu. Vui lòng thử lại.",
+      );
+    } finally {
+      setAuthBusy(false);
+    }
   };
+
+  const logout = async () => {
+    if (!session || authBusy) return;
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      await logoutSession(session.csrfToken);
+      setSession(null);
+      setUi((state) => showLanding(state));
+      setAuthMessage("Đã đăng xuất an toàn.");
+      window.scrollTo({ top: 0, behavior: "instant" });
+    } catch (error) {
+      setAuthError(
+        error instanceof AuthApiError
+          ? error.message
+          : "Không thể đăng xuất. Vui lòng thử lại.",
+      );
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const forcePasswordChange = Boolean(session?.mustChangePassword);
+  const displayName = session?.user.displayName ?? "Người dùng";
 
   return (
     <>
-      <div className="demo-bar">PROTOTYPE UI · SAMPLE DATA · KHÔNG DÙNG DỮ LIỆU THẬT</div>
+      <div className="demo-bar">MÔI TRƯỜNG THỬ NGHIỆM · AUTH NỘI BỘ · DASHBOARD DÙNG SAMPLE DATA</div>
 
       {ui.view === "landing" ? (
         <main className="landing-shell">
@@ -58,41 +173,106 @@ export function App() {
 
           <section className="login-panel">
             <div className="login-card">
-              <div className="login-kicker">{UI_BASELINE_COPY.loginKicker}</div>
-              <h2>{UI_BASELINE_COPY.welcomeTitle}</h2>
-              <p className="muted">Truy cập công việc và quy trình trong phạm vi được phân quyền.</p>
-              <form onSubmit={submitLogin}>
-                <label>
-                  Tên đăng nhập
-                  <input autoComplete="username" name="username" placeholder="Nhập tên đăng nhập" required />
-                </label>
-                <label>
-                  Mật khẩu
-                  <div className="password-wrap">
-                    <input
-                      type={ui.passwordVisible ? "text" : "password"}
-                      autoComplete="current-password"
-                      placeholder="Nhập mật khẩu"
-                      required
-                    />
-                    <button
-                      type="button"
-                      aria-label={ui.passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-                      onClick={() => setUi((state) => togglePassword(state))}
-                    >
-                      {ui.passwordVisible ? "Ẩn" : "Hiện"}
+              {forcePasswordChange ? (
+                <>
+                  <div className="login-kicker">Bảo mật tài khoản</div>
+                  <h2>Đổi mật khẩu lần đầu</h2>
+                  <p className="muted">Cập nhật mật khẩu trước khi truy cập khu vực làm việc được phân quyền.</p>
+                  <form onSubmit={submitPasswordChange}>
+                    <label>
+                      Mật khẩu hiện tại
+                      <div className="password-wrap">
+                        <input
+                          name="currentPassword"
+                          type={ui.passwordVisible ? "text" : "password"}
+                          autoComplete="current-password"
+                          placeholder="Nhập mật khẩu hiện tại"
+                          required
+                        />
+                        <button
+                          type="button"
+                          aria-label={ui.passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                          onClick={() => setUi((state) => togglePassword(state))}
+                        >
+                          {ui.passwordVisible ? "Ẩn" : "Hiện"}
+                        </button>
+                      </div>
+                    </label>
+                    <label>
+                      Mật khẩu mới
+                      <input
+                        name="newPassword"
+                        type={ui.passwordVisible ? "text" : "password"}
+                        autoComplete="new-password"
+                        placeholder="Ít nhất 12 ký tự"
+                        minLength={12}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Xác nhận mật khẩu mới
+                      <input
+                        name="confirmPassword"
+                        type={ui.passwordVisible ? "text" : "password"}
+                        autoComplete="new-password"
+                        placeholder="Nhập lại mật khẩu mới"
+                        minLength={12}
+                        required
+                      />
+                    </label>
+                    {authError ? <p className="demo-note" role="alert">{authError}</p> : null}
+                    {authMessage ? <output className="demo-note">{authMessage}</output> : null}
+                    <button className="primary" type="submit" disabled={authBusy}>
+                      {authBusy ? "Đang cập nhật…" : "Cập nhật mật khẩu"}
                     </button>
-                  </div>
-                </label>
-                <div className="form-meta">
-                  <label className="check"><input type="checkbox" /> <span>Ghi nhớ trên thiết bị này</span></label>
-                  <span className="policy-note">Khôi phục mật khẩu chưa bật</span>
-                </div>
-                <button className="primary" type="submit">Đăng nhập</button>
-                <p className="demo-note">Prototype: nhập giá trị bất kỳ để xem dashboard mẫu. Không có xác thực thật.</p>
-              </form>
+                    <p className="demo-note">Sau khi đổi mật khẩu, toàn bộ phiên hiện tại sẽ bị thu hồi và cần đăng nhập lại.</p>
+                    <button className="text-btn" type="button" onClick={() => void logout()} disabled={authBusy}>Đăng xuất</button>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <div className="login-kicker">{UI_BASELINE_COPY.loginKicker}</div>
+                  <h2>{UI_BASELINE_COPY.welcomeTitle}</h2>
+                  <p className="muted">Truy cập công việc và quy trình trong phạm vi được phân quyền.</p>
+                  <form onSubmit={submitLogin}>
+                    <label>
+                      Tên đăng nhập
+                      <input autoComplete="username" name="username" placeholder="Nhập tên đăng nhập" required />
+                    </label>
+                    <label>
+                      Mật khẩu
+                      <div className="password-wrap">
+                        <input
+                          name="password"
+                          type={ui.passwordVisible ? "text" : "password"}
+                          autoComplete="current-password"
+                          placeholder="Nhập mật khẩu"
+                          required
+                        />
+                        <button
+                          type="button"
+                          aria-label={ui.passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                          onClick={() => setUi((state) => togglePassword(state))}
+                        >
+                          {ui.passwordVisible ? "Ẩn" : "Hiện"}
+                        </button>
+                      </div>
+                    </label>
+                    <div className="form-meta">
+                      <label className="check"><input type="checkbox" disabled /> <span>Ghi nhớ trên thiết bị này</span></label>
+                      <span className="policy-note">Khôi phục mật khẩu chưa bật</span>
+                    </div>
+                    {authError ? <p className="demo-note" role="alert">{authError}</p> : null}
+                    {authMessage ? <output className="demo-note">{authMessage}</output> : null}
+                    <button className="primary" type="submit" disabled={authBusy || restoring}>
+                      {restoring ? "Đang kiểm tra phiên…" : authBusy ? "Đang đăng nhập…" : "Đăng nhập"}
+                    </button>
+                    <p className="demo-note">Xác thực nội bộ dùng phiên máy chủ. Thông báo đăng nhập không tiết lộ tài khoản có tồn tại hay không.</p>
+                  </form>
+                </>
+              )}
             </div>
-            <p className="support">Phiên bản giao diện thử nghiệm theo SOP Specification v1.5 Rev.10</p>
+            <p className="support">G0-03 Authentication Foundation · SOP Specification v1.6 Lean Baseline Rev.10</p>
           </section>
         </main>
       ) : (
@@ -116,13 +296,22 @@ export function App() {
               <div><span className="mobile-brand">SOP</span><span className="crumb">Trang chủ / Tổng quan</span></div>
               <div className="top-actions">
                 <button type="button" className="icon-btn" aria-label="Thông báo">●<span>3</span></button>
-                <button type="button" className="profile" onClick={logout}>ND <span>Người dùng demo</span></button>
+                <button
+                  type="button"
+                  className="profile"
+                  onClick={() => void logout()}
+                  disabled={authBusy}
+                  aria-label={`Đăng xuất tài khoản ${displayName}`}
+                  title="Đăng xuất"
+                >
+                  {initials(displayName)} <span>{displayName}</span>
+                </button>
               </div>
             </header>
 
             <div className="content">
               <div className="welcome">
-                <div><span className="eyebrow dark">Hôm nay</span><h1>Chào buổi sáng, Người dùng demo</h1><p>6 công việc có thể thao tác · 2 ngoại lệ cần chú ý.</p></div>
+                <div><span className="eyebrow dark">Hôm nay</span><h1>Chào buổi sáng, {displayName}</h1><p>6 công việc có thể thao tác · 2 ngoại lệ cần chú ý.</p></div>
                 <button type="button" className="secondary">+ Tạo lượt</button>
               </div>
 
