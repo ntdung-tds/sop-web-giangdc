@@ -1,3 +1,5 @@
+import { scrypt as nodeScrypt } from "node:crypto";
+
 export type PermissionCode = string;
 export type SystemRoleCode = string;
 
@@ -79,6 +81,7 @@ export const AUTH_POLICY_DEFAULTS: AuthPolicy = {
   lockoutThreshold: 5,
   lockoutDurationMs: 15 * 60_000,
   sessionTtlMs: 8 * 60 * 60_000,
+  // Retained for legacy PBKDF2 hash compatibility; new hashes use scrypt.
   pbkdf2Iterations: 600_000,
   sourceRateLimitThreshold: 20,
   sourceRateWindowMs: 15 * 60_000,
@@ -149,6 +152,13 @@ const INVALID_SESSION: AuthFailure = {
   code: "INVALID_SESSION",
   message: "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.",
 };
+
+const SCRYPT_N = 32_768;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_KEY_LENGTH = 32;
+const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
+const CLOUDFLARE_PBKDF2_MAX_ITERATIONS = 100_000;
 
 function resolvePolicy(policy: AuthPolicy): ResolvedAuthPolicy {
   return {
@@ -234,28 +244,89 @@ async function pbkdf2(
   return new Uint8Array(bits);
 }
 
+function scrypt(
+  password: string,
+  salt: Uint8Array,
+  n = SCRYPT_N,
+  r = SCRYPT_R,
+  p = SCRYPT_P,
+): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    nodeScrypt(
+      password,
+      salt,
+      SCRYPT_KEY_LENGTH,
+      { N: n, r, p, maxmem: SCRYPT_MAX_MEMORY },
+      (error, derivedKey) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(new Uint8Array(derivedKey));
+      },
+    );
+  });
+}
+
+function isValidScryptCost(n: number, r: number, p: number): boolean {
+  return (
+    Number.isSafeInteger(n) &&
+    n >= 16_384 &&
+    n <= 65_536 &&
+    (n & (n - 1)) === 0 &&
+    Number.isSafeInteger(r) &&
+    r >= 1 &&
+    r <= 16 &&
+    Number.isSafeInteger(p) &&
+    p >= 1 &&
+    p <= 4
+  );
+}
+
 export async function createPasswordHash(
   password: string,
-  iterations = AUTH_POLICY_DEFAULTS.pbkdf2Iterations,
+  _legacyIterations = AUTH_POLICY_DEFAULTS.pbkdf2Iterations,
 ): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const digest = await pbkdf2(password, salt, iterations);
-  return `pbkdf2-sha256$${iterations}$${bytesToBase64(salt)}$${bytesToBase64(digest)}`;
+  const digest = await scrypt(password, salt);
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${bytesToBase64(salt)}$${bytesToBase64(digest)}`;
 }
 
 export async function verifyPassword(password: string, encoded: string): Promise<boolean> {
-  const [algorithm, iterationsRaw, saltRaw, digestRaw, ...extra] = encoded.split("$");
+  const parts = encoded.split("$");
+  const algorithm = parts[0];
+
+  if (algorithm === "scrypt") {
+    if (parts.length !== 6) return false;
+    const [, nRaw, rRaw, pRaw, saltRaw, digestRaw] = parts;
+    if (!nRaw || !rRaw || !pRaw || !saltRaw || !digestRaw) return false;
+    const n = Number(nRaw);
+    const r = Number(rRaw);
+    const p = Number(pRaw);
+    if (!isValidScryptCost(n, r, p)) return false;
+    const salt = base64ToBytes(saltRaw);
+    const expected = base64ToBytes(digestRaw);
+    if (!salt || !expected || expected.length !== SCRYPT_KEY_LENGTH) return false;
+
+    try {
+      const actual = await scrypt(password, salt, n, r, p);
+      return constantTimeEqual(actual, expected);
+    } catch {
+      return false;
+    }
+  }
+
+  if (algorithm !== "pbkdf2-sha256" || parts.length !== 4) return false;
+  const [, iterationsRaw, saltRaw, digestRaw] = parts;
+  if (!iterationsRaw || !saltRaw || !digestRaw) return false;
+  const iterations = Number(iterationsRaw);
   if (
-    extra.length > 0 ||
-    algorithm !== "pbkdf2-sha256" ||
-    !iterationsRaw ||
-    !saltRaw ||
-    !digestRaw
+    !Number.isSafeInteger(iterations) ||
+    iterations <= 0 ||
+    iterations > CLOUDFLARE_PBKDF2_MAX_ITERATIONS
   ) {
     return false;
   }
-  const iterations = Number(iterationsRaw);
-  if (!Number.isSafeInteger(iterations) || iterations <= 0) return false;
 
   const salt = base64ToBytes(saltRaw);
   const expected = base64ToBytes(digestRaw);
@@ -618,6 +689,6 @@ export class AuthService {
 
   private async consumeDummyPasswordWork(password: string): Promise<void> {
     const salt = new Uint8Array(16);
-    await pbkdf2(password, salt, this.policy.pbkdf2Iterations);
+    await scrypt(password, salt);
   }
 }
