@@ -110,5 +110,31 @@ Final preview deployment:
 - Pages Functions enabled;
 - preview `SOP_DB` binding points to the preview auth D1.
 
+## Temporary password validity — 48 hours
+Owner review requested a bounded validity window for temporary bootstrap credentials.
+
+Implementation:
+- `AUTH_POLICY_DEFAULTS.temporaryPasswordTtlMs = 48h`.
+- New bootstrap users persist `temporary_password_expires_at`.
+- Login rejects an otherwise-correct temporary password once its expiry is reached, while preserving the generic `INVALID_CREDENTIALS` response required by the auth boundary.
+- Successful first-password change clears the temporary expiry and revokes all sessions.
+- Migration `0004_temporary_password_expiry.sql` adds the preview schema column/index.
+- The preview migration was applied successfully on 17/10/2026.
+- For the existing preview identity created before migration, the D1 repository derives the legacy expiry as `created_at + 48h` when the new column is null. This avoids an unbounded temporary password without requiring a credential rewrite.
+
+Test-first evidence:
+- RED run `39036069599` / run #67: typecheck failed against the new 48h contract before the implementation existed.
+- GREEN run `39036417609` / run #70 on commit `83c39ccade173eab249b76c414ed80ace94c4ac5`.
+- lint: success (only the two pre-existing `!important` warnings).
+- typecheck: success.
+- unit tests: 9 files / 30 tests passed, including 2 dedicated temporary-password-expiry tests.
+- build: success for web, node API and Cloudflare API.
+
+Preview runtime verification:
+- D1 identity is active and not locked.
+- Existing temporary credential hash was verified locally against the owner-provided original temporary password; no plaintext password was stored or rewritten.
+- Current account creation time implies legacy temporary-password expiry at 19/10/2026 17:49 (Asia/Bangkok), unless the owner changes the password earlier.
+- Latest successful preview deployment: `7a73c9e0-ba69-463b-b657-57398c09902c` on commit `83c39ccade173eab249b76c414ed80ace94c4ac5`.
+
 ## Remaining owner handoff
 The preview reviewer credential has been securely provisioned but has not yet been taken over by the owner. The owner must log in once and replace the temporary password through the force-change UI. Until that takeover succeeds, G0-03/G0-03F must not be promoted to stable production.
