@@ -9,6 +9,10 @@ import {
   restoreSession,
 } from "./authClient.ts";
 import {
+  loadRememberedUsername,
+  persistRememberedUsername,
+} from "./rememberUsername.ts";
+import {
   initialUiState,
   showDashboard,
   showLanding,
@@ -30,6 +34,9 @@ export function App() {
   const [restoring, setRestoring] = useState(true);
   const [authError, setAuthError] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [rememberedUsername] = useState(() =>
+    typeof window === "undefined" ? "" : loadRememberedUsername(window.localStorage),
+  );
   const heroTitleId = useId();
 
   useEffect(() => {
@@ -56,11 +63,12 @@ export function App() {
     setAuthMessage("");
     setAuthBusy(true);
     const data = new FormData(event.currentTarget);
+    const username = String(data.get("username") ?? "");
+    const password = String(data.get("password") ?? "");
+    const rememberDevice = data.get("rememberDevice") === "on";
     try {
-      const authenticated = await login(
-        String(data.get("username") ?? ""),
-        String(data.get("password") ?? ""),
-      );
+      const authenticated = await login(username, password);
+      persistRememberedUsername(window.localStorage, username, rememberDevice);
       setSession(authenticated);
       if (authenticated.mustChangePassword) {
         setUi((state) => showLanding(state));
@@ -237,7 +245,13 @@ export function App() {
                   <form onSubmit={submitLogin}>
                     <label>
                       Tên đăng nhập
-                      <input autoComplete="username" name="username" placeholder="Nhập tên đăng nhập" required />
+                      <input
+                        autoComplete="username"
+                        name="username"
+                        placeholder="Nhập tên đăng nhập"
+                        defaultValue={rememberedUsername}
+                        required
+                      />
                     </label>
                     <label>
                       Mật khẩu
@@ -259,8 +273,15 @@ export function App() {
                       </div>
                     </label>
                     <div className="form-meta">
-                      <label className="check"><input type="checkbox" disabled /> <span>Ghi nhớ trên thiết bị này</span></label>
-                      <span className="policy-note">Khôi phục mật khẩu chưa bật</span>
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          name="rememberDevice"
+                          defaultChecked={Boolean(rememberedUsername)}
+                        />
+                        <span>Ghi nhớ trên thiết bị này</span>
+                      </label>
+                      <span className="policy-note">Chỉ lưu tên đăng nhập · Không lưu mật khẩu</span>
                     </div>
                     {authError ? <p className="demo-note" role="alert">{authError}</p> : null}
                     {authMessage ? <output className="demo-note">{authMessage}</output> : null}
