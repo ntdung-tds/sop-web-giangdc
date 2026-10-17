@@ -1,17 +1,8 @@
-export type AuthRole = "ADMIN" | "PROCESS_OWNER" | "REVIEWER" | "OPERATOR" | "AUDITOR";
-
-export type AuthPermission =
-  | "users.manage"
-  | "audit.read"
-  | "process.read"
-  | "process.manage"
-  | "process.review"
-  | "execution.read"
-  | "execution.run"
-  | "exception.review";
+export type PermissionCode = string;
+export type SystemRoleCode = string;
 
 export interface RoleAssignment {
-  role: AuthRole;
+  roleCode: SystemRoleCode;
   scopeId: string;
 }
 
@@ -54,6 +45,7 @@ export interface AuthRepository {
   revokeAllSessions(userId: string, revokedAt: number): Promise<void>;
   findLoginSource(source: string): Promise<LoginSourceState | null>;
   saveLoginSource(state: LoginSourceState): Promise<void>;
+  roleHasPermission(roleCode: SystemRoleCode, permissionCode: PermissionCode): Promise<boolean>;
 }
 
 export interface AuthPolicy {
@@ -131,23 +123,6 @@ interface AuthDependencies {
   now?: () => number;
   randomBytes?: (length: number) => Uint8Array;
 }
-
-const ROLE_PERMISSIONS: Readonly<Record<AuthRole, readonly AuthPermission[]>> = {
-  ADMIN: [
-    "users.manage",
-    "audit.read",
-    "process.read",
-    "process.manage",
-    "process.review",
-    "execution.read",
-    "execution.run",
-    "exception.review",
-  ],
-  PROCESS_OWNER: ["process.read", "process.manage", "execution.read"],
-  REVIEWER: ["process.read", "process.review", "execution.read", "exception.review"],
-  OPERATOR: ["process.read", "execution.read", "execution.run"],
-  AUDITOR: ["process.read", "execution.read", "audit.read"],
-};
 
 const INVALID_CREDENTIALS: AuthFailure = {
   code: "INVALID_CREDENTIALS",
@@ -273,6 +248,7 @@ export class InMemoryAuthRepository implements AuthRepository {
   private readonly users = new Map<string, AuthUserRecord>();
   private readonly sessions = new Map<string, AuthSessionRecord>();
   private readonly sourceStates = new Map<string, LoginSourceState>();
+  private readonly rolePermissions = new Map<SystemRoleCode, Set<PermissionCode>>();
 
   async findUserByUsername(username: string): Promise<AuthUserRecord | null> {
     const normalized = normalizeUsername(username);
@@ -322,6 +298,19 @@ export class InMemoryAuthRepository implements AuthRepository {
 
   async saveLoginSource(state: LoginSourceState): Promise<void> {
     this.sourceStates.set(state.source, structuredClone(state));
+  }
+
+  async roleHasPermission(
+    roleCode: SystemRoleCode,
+    permissionCode: PermissionCode,
+  ): Promise<boolean> {
+    return this.rolePermissions.get(roleCode)?.has(permissionCode) ?? false;
+  }
+
+  grantRolePermission(roleCode: SystemRoleCode, permissionCode: PermissionCode): void {
+    const permissions = this.rolePermissions.get(roleCode) ?? new Set<PermissionCode>();
+    permissions.add(permissionCode);
+    this.rolePermissions.set(roleCode, permissions);
   }
 }
 
@@ -440,15 +429,22 @@ export class AuthService {
 
   async isAllowed(
     sessionToken: string,
-    permission: AuthPermission,
+    permissionCode: PermissionCode,
     scopeId: string,
   ): Promise<boolean> {
     const resolved = await this.resolveSession(sessionToken);
     if (!resolved || resolved.user.mustChangePassword) return false;
-    return resolved.user.roles.some((assignment) => {
+
+    for (const assignment of resolved.user.roles) {
       const scopeMatches = assignment.scopeId === "*" || assignment.scopeId === scopeId;
-      return scopeMatches && ROLE_PERMISSIONS[assignment.role].includes(permission);
-    });
+      if (
+        scopeMatches &&
+        (await this.repository.roleHasPermission(assignment.roleCode, permissionCode))
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private async createSession(
