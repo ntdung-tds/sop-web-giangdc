@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   moveStep,
   validateAuthoringDraftCore,
@@ -22,6 +22,7 @@ function replaceVersion(
 export function App() {
   const [process, setProcess] = useState<ProcessAggregate>(shippingSample);
   const [selectedStepCode, setSelectedStepCode] = useState("SAMPLE-01");
+  const sampleHeadingId = useId();
   const draft = process.versions.at(-1);
 
   if (draft === undefined) {
@@ -61,9 +62,9 @@ export function App() {
         </div>
       </header>
 
-      <section className="notice" aria-labelledby="sample-heading">
+      <section className="notice" aria-labelledby={sampleHeadingId}>
         <div>
-          <p className="eyebrow" id="sample-heading">FIXTURE UAT · SOURCE ONLY</p>
+          <p className="eyebrow" id={sampleHeadingId}>FIXTURE UAT · SOURCE ONLY</p>
           <h1>Thiết kế quy trình theo phiên bản, không suy diễn nghiệp vụ.</h1>
         </div>
         <p>
@@ -156,7 +157,7 @@ export function App() {
                     <small>{step.stepCode} · Vai trò: Chưa chốt</small>
                   </span>
                 </button>
-                <div className="reorderActions" aria-label={`Đổi thứ tự ${step.stepCode}`}>
+                <div className="reorderActions">
                   <button
                     type="button"
                     disabled={index === 0}
