@@ -173,13 +173,24 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
+function base64ToBytes(value: string): Uint8Array | null {
+  const standard = value.replaceAll("-", "+").replaceAll("_", "/");
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(standard)) return null;
+  const unpadded = standard.replace(/=+$/, "");
+  const remainder = unpadded.length % 4;
+  if (remainder === 1) return null;
+  const padded = `${unpadded}${"=".repeat((4 - remainder) % 4)}`;
+
+  try {
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  } catch {
+    return null;
   }
-  return bytes;
 }
 
 function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -227,12 +238,29 @@ export async function createPasswordHash(
 }
 
 export async function verifyPassword(password: string, encoded: string): Promise<boolean> {
-  const [algorithm, iterationsRaw, saltRaw, digestRaw] = encoded.split("$");
-  if (algorithm !== "pbkdf2-sha256" || !iterationsRaw || !saltRaw || !digestRaw) return false;
+  const [algorithm, iterationsRaw, saltRaw, digestRaw, ...extra] = encoded.split("$");
+  if (
+    extra.length > 0 ||
+    algorithm !== "pbkdf2-sha256" ||
+    !iterationsRaw ||
+    !saltRaw ||
+    !digestRaw
+  ) {
+    return false;
+  }
   const iterations = Number(iterationsRaw);
   if (!Number.isSafeInteger(iterations) || iterations <= 0) return false;
-  const actual = await pbkdf2(password, base64ToBytes(saltRaw), iterations);
-  return constantTimeEqual(actual, base64ToBytes(digestRaw));
+
+  const salt = base64ToBytes(saltRaw);
+  const expected = base64ToBytes(digestRaw);
+  if (!salt || !expected) return false;
+
+  try {
+    const actual = await pbkdf2(password, salt, iterations);
+    return constantTimeEqual(actual, expected);
+  } catch {
+    return false;
+  }
 }
 
 async function sha256Base64(value: string): Promise<string> {
