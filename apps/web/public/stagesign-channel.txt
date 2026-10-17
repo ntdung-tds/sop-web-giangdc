@@ -1,0 +1,3 @@
+channel=sopweb-giangdc-stagesign
+production_branch=stagesign
+baseline=2b76a577eae8f7f9d396ec034b1965515cf4bc57
