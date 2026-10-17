@@ -86,6 +86,28 @@ describe("G0-03F secure first-account bootstrap", () => {
     expect(await repository.countUsers()).toBe(0);
   });
 
+  it("does not disclose bootstrap route methods without a valid secret", async () => {
+    const repository = new InMemoryAuthRepository();
+    const withoutSecret = await handleAuthHttpRequest(
+      new Request("https://example.test/api/v1/auth/bootstrap", { method: "GET" }),
+      repository,
+      {},
+    );
+    expect(withoutSecret?.status).toBe(404);
+    expect(withoutSecret?.headers.get("allow")).toBeNull();
+
+    const withWrongSecret = await handleAuthHttpRequest(
+      new Request("https://example.test/api/v1/auth/bootstrap", {
+        method: "GET",
+        headers: { "x-bootstrap-token": "wrong-token" },
+      }),
+      repository,
+      { bootstrapToken: BOOTSTRAP_TOKEN },
+    );
+    expect(withWrongSecret?.status).toBe(404);
+    expect(withWrongSecret?.headers.get("allow")).toBeNull();
+  });
+
   it("accepts the bootstrap secret only via header, never returns the initial password, then self-disables", async () => {
     const repository = new InMemoryAuthRepository();
 
